@@ -1,0 +1,3239 @@
+<!DOCTYPE html>
+<!--
+  ============================================================
+  BRANDSCHUTZBEDARFSPLAN-SIMULATOR (BSBP) v2.0
+  Feuerwehr Hagen | Interaktiver Prototyp – Vollversion
+  ============================================================
+  Datei:    bsbp-simulator-v2.html (Single-File-App)
+  Version:  2.0.0
+  Stand:    2026
+  
+  BESCHREIBUNG:
+    Vollständiger 5-Kapitel-Simulator für den Brandschutzbedarfs-
+    plan der Stadt Hagen (NRW) auf Basis des BHKG NRW (2015).
+    Das Tool integriert rechtskonforme Grundlagen, Hagen-
+    spezifische Strukturdaten und eine interaktive Simulation
+    der Schutzzielauswirkungen.
+
+  KAPITEL:
+    1  Bestandsanalyse (Ist-Zustand)
+    2  Risikoanalyse (Gefahrenpotenzial)
+    3  Schutzziel-Simulator (interaktiv)
+    4  Defizitanalyse (Soll-Ist-Vergleich)
+    5  Maßnahmenplan (Konzept 2025–2035)
+
+  RECHTSGRUNDLAGEN NRW:
+    • BHKG NRW § 3 Abs.1+3 (Pflicht zur Bedarfsplanung)
+    • BHKG NRW § 4       (Berufsfeuerwehr kreisfreie Städte)
+    • BHKG NRW § 28      (Leitstelle)
+    • BauO NRW §§ 14, 15 (vorbeugender Brandschutz)
+    • GO NRW § 41, § 55  (Ratszuständigkeit)
+    • AGBF-Schutzziel    (8 Min / 1:8+GF / 90 %)
+    • LFV NRW Empfehlung 2001/2016 (IDF NRW)
+
+  ABHÄNGIGKEITEN (CDN):
+    • Chart.js v4  → Diagramme
+    • Lucide Icons → SVG-Icons
+  ============================================================
+-->
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BSBP-Simulator v2 | Feuerwehr Hagen</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+
+  <style>
+    /* Tabellen: horizontales Scrollen – wird per JS-Wrapper gesetzt (siehe Bootstrap) */
+    .tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; width: 100%; }
+    /* Tabellen mit vielen Spalten: feste Mindestbreite */
+    .tbl-scroll .data-table { min-width: 480px; white-space: nowrap; }
+    /* Kurze Tabellen (2-3 Spalten) brauchen weniger */
+    .tbl-scroll.tbl-narrow .data-table { min-width: 320px; }
+    /* Text in td wieder umbrechen, nur th bleibt nowrap */
+    .tbl-scroll .data-table td { white-space: normal; min-width: 80px; }
+    .tbl-scroll .data-table th { white-space: nowrap; }
+    /* ============================================================
+       CSS-VARIABLEN & RESET
+       ============================================================ */
+    :root {
+      --bg-base:        #080b10;
+      --bg-panel:       #0e1320;
+      --bg-panel-alt:   #131825;
+      --bg-border:      #1c2438;
+      --bg-hover:       #182030;
+      --bg-glass:       rgba(14,19,32,0.85);
+
+      --amber:    #f59e0b;
+      --amber-d:  #b45309;
+      --amber-l:  #fcd34d;
+      --blue:     #38bdf8;
+      --blue-d:   #0369a1;
+      --green:    #22c55e;
+      --red:      #ef4444;
+      --orange:   #f97316;
+      --purple:   #a78bfa;
+
+      --text-1:   #e2e8f0;
+      --text-2:   #8b98b1;
+      --text-3:   #4b5571;
+      --text-4:   #2d3752;
+
+      --font-mono: 'Courier New', Courier, monospace;
+      --font-sans: 'Trebuchet MS', 'Segoe UI', sans-serif;
+
+      --r-sm: 4px;
+      --r-md: 8px;
+      --r-lg: 12px;
+      --r-xl: 16px;
+      --trans: 0.25s cubic-bezier(.4,0,.2,1);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg-base);
+      color: var(--text-1);
+      min-height: 100vh;
+      line-height: 1.65;
+      background-image:
+        linear-gradient(rgba(28,36,56,.25) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(28,36,56,.25) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-base); }
+    ::-webkit-scrollbar-thumb { background: var(--bg-border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--amber-d); }
+
+    /* ============================================================
+       HEADER
+       ============================================================ */
+    .app-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg-glass);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--bg-border);
+      padding: 0 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.75rem 0;
+    }
+
+    .brand-emblem {
+      width: 44px; height: 44px;
+      background: linear-gradient(135deg, var(--amber), var(--amber-d));
+      border-radius: var(--r-md);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem;
+      box-shadow: 0 0 20px rgba(245,158,11,.25);
+      flex-shrink: 0;
+    }
+
+    .brand-copy h1 {
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--amber);
+    }
+
+    .brand-copy p {
+      font-size: 0.7rem;
+      color: var(--text-2);
+      letter-spacing: .05em;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .live-badge {
+      display: flex; align-items: center; gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-2);
+    }
+
+    .live-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: blink 2s ease-in-out infinite;
+    }
+
+    @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:.35; } }
+
+    #live-clock {
+      font-family: var(--font-mono);
+      font-size: .875rem;
+      color: var(--amber);
+      letter-spacing: .1em;
+    }
+
+    .btn-ghost {
+      display: flex; align-items: center; gap: 6px;
+      padding: .4rem .9rem;
+      background: transparent;
+      border: 1px solid var(--bg-border);
+      border-radius: var(--r-md);
+      color: var(--text-2);
+      font-family: var(--font-sans);
+      font-size: .75rem;
+      cursor: pointer;
+      transition: all var(--trans);
+    }
+
+    .btn-ghost:hover {
+      border-color: var(--amber);
+      color: var(--amber);
+      background: rgba(245,158,11,.06);
+    }
+
+    /* ============================================================
+       TABS-NAVIGATION
+       ============================================================ */
+    .tab-nav {
+      background: var(--bg-glass);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--bg-border);
+      padding: 0 1.5rem;
+      display: flex;
+      gap: 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .tab-nav::-webkit-scrollbar { display: none; }
+
+    .tab-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: .85rem 1.25rem;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: .7rem;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all var(--trans);
+      white-space: nowrap;
+    }
+
+    .tab-btn .tab-num {
+      display: inline-flex;
+      align-items: center; justify-content: center;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: var(--bg-border);
+      font-size: .6rem;
+      transition: all var(--trans);
+    }
+
+    .tab-btn:hover {
+      color: var(--text-2);
+    }
+
+    .tab-btn.active {
+      color: var(--amber);
+      border-bottom-color: var(--amber);
+    }
+
+    .tab-btn.active .tab-num {
+      background: var(--amber);
+      color: var(--bg-base);
+    }
+
+    /* ============================================================
+       TAB-PANEL
+       ============================================================ */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .panel-body {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 1.5rem;
+    }
+
+    /* ============================================================
+       LAYOUT-GRID
+       ============================================================ */
+    .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 1rem; }
+    .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 1rem; }
+    .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 1rem; }
+    .grid-right-wide { display: grid; grid-template-columns: minmax(260px,320px) 1fr; gap: 1rem; }
+    .grid-left-wide  { display: grid; grid-template-columns: 1fr minmax(260px,360px); gap: 1rem; }
+
+    @media(max-width:1100px) {
+      .grid-right-wide, .grid-left-wide { grid-template-columns: 1fr; }
+    }
+
+    @media(max-width:640px) {
+      .panel-body { padding: 1rem .75rem; }
+      .app-header { padding: 0 .75rem; }
+      .tab-nav    { padding: 0 .75rem; }
+    }
+
+    /* Abstandshelfer */
+    .mb-sm { margin-bottom: .5rem; }
+    .mb-md { margin-bottom: 1rem; }
+    .mb-lg { margin-bottom: 1.5rem; }
+
+    /* ============================================================
+       CARD-KOMPONENTE
+       ============================================================ */
+    .card {
+      background: var(--bg-panel);
+      border: 1px solid var(--bg-border);
+      border-radius: var(--r-lg);
+      padding: 1.25rem;
+      box-shadow: 0 4px 24px rgba(0,0,0,.4);
+      position: relative;
+      overflow: hidden;
+      transition: border-color var(--trans);
+      animation: slideUp .4s ease both;
+    }
+
+    @keyframes slideUp {
+      from { opacity:0; transform:translateY(16px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--card-accent,var(--bg-border)), transparent);
+    }
+
+    .card:hover { border-color: var(--card-accent, var(--bg-border)); }
+
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+      gap: .5rem;
+    }
+
+    .card-title {
+      font-family: var(--font-mono);
+      font-size: .65rem;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .card-title .icon { color: var(--card-accent, var(--text-3)); }
+
+    /* ============================================================
+       SECTION-DIVIDER
+       ============================================================ */
+    .sec-head {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      margin-bottom: 1rem;
+    }
+
+    .sec-head .sec-num {
+      font-family: var(--font-mono);
+      font-size: .65rem;
+      color: var(--amber);
+      background: rgba(245,158,11,.1);
+      border: 1px solid rgba(245,158,11,.25);
+      padding: 2px 8px;
+      border-radius: 3px;
+      white-space: nowrap;
+    }
+
+    .sec-head .sec-label {
+      font-family: var(--font-mono);
+      font-size: .65rem;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+      color: var(--text-3);
+    }
+
+    .sec-head::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--bg-border);
+    }
+
+    /* ============================================================
+       RECHTLICHE HINWEISBOX
+       ============================================================ */
+    .law-box {
+      background: rgba(245,158,11,.04);
+      border: 1px solid rgba(245,158,11,.2);
+      border-left: 3px solid var(--amber);
+      border-radius: var(--r-md);
+      padding: .875rem 1rem;
+      margin-bottom: 1rem;
+      font-size: .775rem;
+      color: var(--text-2);
+    }
+
+    .law-box strong { color: var(--amber); }
+
+    .law-box .law-title {
+      font-family: var(--font-mono);
+      font-size: .65rem;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--amber);
+      margin-bottom: .4rem;
+    }
+
+    /* Quellennachweis-Tags */
+    .law-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .4rem;
+      margin-top: .6rem;
+    }
+
+    .law-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-family: var(--font-mono);
+      font-size: .65rem;
+      background: rgba(56,189,248,.08);
+      border: 1px solid rgba(56,189,248,.2);
+      color: var(--blue);
+      cursor: default;
+    }
+
+    /* ============================================================
+       STATISTISCHE KACHELN (KPIs)
+       ============================================================ */
+    .stat-card {
+      --card-accent: var(--amber);
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+    }
+
+    .stat-val {
+      font-family: var(--font-mono);
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--card-accent);
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-size: .75rem;
+      color: var(--text-2);
+    }
+
+    .stat-sub {
+      font-size: .65rem;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+    }
+
+    /* Mini-Balken unter Stat */
+    .mini-bar-track {
+      height: 4px;
+      background: var(--bg-border);
+      border-radius: 2px;
+      margin-top: .4rem;
+      overflow: hidden;
+    }
+
+    .mini-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      background: var(--card-accent);
+      transition: width .8s cubic-bezier(.4,0,.2,1);
+    }
+
+    /* ============================================================
+       TABELLEN
+       ============================================================ */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .8rem;
+      /* Verhindert, dass Tabellen die Card sprengen */
+      table-layout: auto;
+    }
+
+    /* Jede Card, die eine Tabelle enthält, bekommt auto-overflow */
+    .card { overflow-x: auto; }
+
+    /* Globaler Tabellen-Wrapper: alle Tabellen scrollbar auf kleinen Bildschirmen */
+    .data-table thead th {
+      text-align: left;
+      padding: .5rem .75rem;
+      font-family: var(--font-mono);
+      font-size: .6rem;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      border-bottom: 1px solid var(--bg-border);
+    }
+
+    .data-table tbody td {
+      padding: .6rem .75rem;
+      border-bottom: 1px solid rgba(28,36,56,.6);
+      color: var(--text-2);
+      vertical-align: middle;
+    }
+
+    .data-table tbody tr:last-child td { border-bottom: none; }
+    .data-table tbody tr:hover td { background: var(--bg-hover); color: var(--text-1); }
+
+    /* ============================================================
+       BADGE / CHIP
+       ============================================================ */
+    .chip {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 2px 7px;
+      border-radius: 3px;
+      font-family: var(--font-mono);
+      font-size: .65rem;
+      white-space: nowrap;
+    }
+
+    .chip-green  { background: rgba(34,197,94,.12); color: var(--green); border: 1px solid rgba(34,197,94,.25); }
+    .chip-amber  { background: rgba(245,158,11,.12); color: var(--amber); border: 1px solid rgba(245,158,11,.25); }
+    .chip-red    { background: rgba(239,68,68,.12); color: var(--red);   border: 1px solid rgba(239,68,68,.25); }
+    .chip-blue   { background: rgba(56,189,248,.12); color: var(--blue); border: 1px solid rgba(56,189,248,.25); }
+    .chip-purple { background: rgba(167,139,250,.12); color: var(--purple); border: 1px solid rgba(167,139,250,.25); }
+
+    /* ============================================================
+       FORTSCHRITTSBALKEN
+       ============================================================ */
+    .prog-track {
+      height: 6px;
+      background: var(--bg-border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .prog-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width .8s cubic-bezier(.4,0,.2,1);
+    }
+
+    .prog-label-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: .65rem;
+      color: var(--text-3);
+      margin-top: 3px;
+      font-family: var(--font-mono);
+    }
+
+    /* ============================================================
+       SLIDER-SYSTEM
+       ============================================================ */
+    .slider-block { margin-bottom: 1rem; }
+
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: .3rem;
+    }
+
+    .slider-header .s-name {
+      font-size: .8rem;
+      color: var(--text-1);
+      font-weight: 600;
+    }
+
+    .slider-header .s-val {
+      font-family: var(--font-mono);
+      font-size: 1.1rem;
+      color: var(--slider-col, var(--amber));
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 5px;
+      background: linear-gradient(
+        to right,
+        var(--slider-col, var(--amber)) var(--pct, 50%),
+        var(--bg-border)                var(--pct, 50%)
+      );
+      border-radius: 3px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: var(--slider-col, var(--amber));
+      border: 2px solid var(--bg-panel);
+      box-shadow: 0 0 8px var(--slider-col, var(--amber));
+      transition: transform .15s;
+    }
+
+    input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.3); }
+
+    .slider-range {
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: .6rem;
+      color: var(--text-3);
+      margin-top: 2px;
+    }
+
+    .slider-note {
+      font-size: .7rem;
+      color: var(--text-3);
+      margin-top: .3rem;
+    }
+
+    /* ============================================================
+       GAUGE (SVG-TACHO)
+       ============================================================ */
+    .gauge-wrap {
+      position: relative;
+      width: 180px; height: 180px;
+      margin: .5rem auto;
+    }
+
+    #gauge-svg { transform: rotate(-90deg); overflow: visible; }
+
+    .g-track {
+      fill: none;
+      stroke: var(--bg-border);
+      stroke-width: 13;
+      stroke-linecap: round;
+    }
+
+    .g-fill {
+      fill: none;
+      stroke: var(--amber);
+      stroke-width: 13;
+      stroke-linecap: round;
+      stroke-dasharray: 377 502;
+      stroke-dashoffset: 377;
+      transition: stroke-dashoffset .9s cubic-bezier(.4,0,.2,1),
+                  stroke .4s ease;
+    }
+
+    .gauge-center {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+    }
+
+    .gauge-pct {
+      font-family: var(--font-mono);
+      font-size: 2.2rem;
+      font-weight: 700;
+      color: var(--text-1);
+      line-height: 1;
+      transition: color var(--trans);
+    }
+
+    .gauge-lbl {
+      font-size: .6rem;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--text-3);
+    }
+
+    /* ============================================================
+       AMPEL
+       ============================================================ */
+    .traffic-light {
+      display: flex;
+      gap: .4rem;
+      margin: .75rem 0;
+    }
+
+    .tl-seg {
+      flex: 1;
+      height: 7px;
+      border-radius: 4px;
+      background: var(--bg-border);
+      transition: background var(--trans), box-shadow var(--trans);
+    }
+
+    .tl-seg.on-green  { background: var(--green);  box-shadow: 0 0 12px var(--green); }
+    .tl-seg.on-amber  { background: var(--amber);  box-shadow: 0 0 12px var(--amber); }
+    .tl-seg.on-red    { background: var(--red);    box-shadow: 0 0 12px var(--red);   }
+
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: .3rem .9rem;
+      border-radius: 20px;
+      font-size: .75rem;
+      font-weight: 600;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      transition: all var(--trans);
+    }
+
+    .pill-ok       { background: rgba(34,197,94,.1);  color: var(--green); border: 1px solid rgba(34,197,94,.25); }
+    .pill-warn     { background: rgba(245,158,11,.1); color: var(--amber); border: 1px solid rgba(245,158,11,.25); }
+    .pill-critical { background: rgba(239,68,68,.1);  color: var(--red);   border: 1px solid rgba(239,68,68,.25); }
+
+    /* ============================================================
+       RISIKO-MATRIX
+       ============================================================ */
+    .risk-tiles {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: .75rem;
+    }
+
+    .risk-tile {
+      background: var(--bg-base);
+      border: 1px solid var(--rt-color);
+      border-radius: var(--r-md);
+      padding: 1rem;
+      text-align: center;
+      transition: transform var(--trans), box-shadow var(--trans);
+    }
+
+    .risk-tile:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 24px rgba(0,0,0,.4);
+    }
+
+    .rt-letter {
+      font-family: var(--font-mono);
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--rt-color);
+      line-height: 1;
+    }
+
+    .rt-name {
+      font-size: .65rem;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--text-3);
+      margin: .3rem 0 .6rem;
+    }
+
+    .rt-count {
+      font-family: var(--font-mono);
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--rt-color);
+      line-height: 1;
+    }
+
+    .rt-sub { font-size: .65rem; color: var(--text-3); }
+
+    /* ============================================================
+       PILLAR-CARD (interaktive Schutzzieleingabe)
+       ============================================================ */
+    .pillar {
+      border-top: 2px solid var(--p-color);
+    }
+
+    .pillar-big {
+      font-family: var(--font-mono);
+      font-size: 3rem;
+      font-weight: 700;
+      color: var(--p-color);
+      line-height: 1;
+      transition: color var(--trans);
+    }
+
+    .pillar-unit { font-size: 1rem; color: var(--text-2); }
+
+    .delta-row {
+      display: flex; justify-content: space-between;
+      font-family: var(--font-mono); font-size: .7rem; color: var(--text-3);
+      margin-top: .4rem;
+    }
+
+    /* ============================================================
+       MASSNAHMEN-KARTE (Kapitel 5)
+       ============================================================ */
+    .measure-card {
+      --card-accent: var(--green);
+      padding: 1rem 1.25rem;
+    }
+
+    .measure-year {
+      font-family: var(--font-mono);
+      font-size: .65rem;
+      color: var(--green);
+      letter-spacing: .1em;
+      margin-bottom: .5rem;
+    }
+
+    .measure-title {
+      font-size: .875rem;
+      font-weight: 600;
+      color: var(--text-1);
+      margin-bottom: .35rem;
+    }
+
+    .measure-body {
+      font-size: .775rem;
+      color: var(--text-2);
+      margin-bottom: .5rem;
+    }
+
+    .measure-law {
+      font-family: var(--font-mono);
+      font-size: .62rem;
+      color: var(--blue);
+    }
+
+    .timeline-line {
+      position: relative;
+      padding-left: 1.75rem;
+    }
+
+    .timeline-line::before {
+      content: '';
+      position: absolute;
+      left: .5rem; top: 0; bottom: 0;
+      width: 1px;
+      background: linear-gradient(to bottom, var(--amber), var(--bg-border));
+    }
+
+    .timeline-line > * + * { margin-top: .75rem; }
+
+    .tl-dot {
+      position: absolute;
+      left: .2rem;
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      background: var(--amber);
+      box-shadow: 0 0 8px var(--amber);
+      top: .25rem;
+    }
+
+    .tl-item {
+      position: relative;
+      padding-bottom: .75rem;
+      border-bottom: 1px solid var(--bg-border);
+    }
+
+    .tl-item:last-child { border-bottom: none; }
+
+    /* ============================================================
+       QUELLENVERZEICHNIS
+       ============================================================ */
+    .sources-panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--bg-border);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      margin-top: 1.5rem;
+    }
+
+    .sources-head {
+      background: var(--bg-panel-alt);
+      border-bottom: 1px solid var(--bg-border);
+      padding: .75rem 1.25rem;
+      font-family: var(--font-mono);
+      font-size: .65rem;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      color: var(--amber);
+      display: flex; align-items: center; gap: .5rem;
+    }
+
+    .sources-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 0;
+    }
+
+    /* Grids min-width schutz */
+    .grid-2, .grid-3, .grid-4 { min-width: 0; }
+    .grid-2 > *, .grid-3 > *, .grid-4 > * { min-width: 0; }
+
+    .source-item {
+      padding: .875rem 1.25rem;
+      border-right: 1px solid var(--bg-border);
+      border-bottom: 1px solid var(--bg-border);
+    }
+
+    .source-item:hover { background: var(--bg-hover); }
+
+    .src-num {
+      font-family: var(--font-mono);
+      font-size: .65rem;
+      color: var(--amber);
+      margin-bottom: .25rem;
+    }
+
+    .src-title {
+      font-size: .8rem;
+      font-weight: 600;
+      color: var(--text-1);
+      margin-bottom: .2rem;
+    }
+
+    .src-detail {
+      font-size: .7rem;
+      color: var(--text-2);
+    }
+
+    .src-url {
+      font-family: var(--font-mono);
+      font-size: .62rem;
+      color: var(--blue);
+      word-break: break-all;
+      margin-top: .25rem;
+    }
+
+    /* Chart-Container */
+    .chart-box {
+      position: relative;
+      height: 260px;
+    }
+
+    /* ============================================================
+       BOUNCE-ANIMATION (Wertänderung)
+       ============================================================ */
+    @keyframes valuePop {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.18); }
+      100% { transform: scale(1); }
+    }
+
+    .pop { animation: valuePop .3s ease; }
+
+    /* ============================================================
+       FOOTER
+       ============================================================ */
+    .app-footer {
+      text-align: center;
+      padding: 2rem 1.5rem 3rem;
+      font-family: var(--font-mono);
+      font-size: .65rem;
+      color: var(--text-4);
+      letter-spacing: .1em;
+      border-top: 1px solid var(--bg-border);
+      margin-top: 2rem;
+    }
+
+    /* ============================================================
+       TOOLTIP
+       ============================================================ */
+    [data-tip] { position: relative; cursor: help; }
+
+    [data-tip]::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-panel-alt);
+      border: 1px solid var(--bg-border);
+      color: var(--text-1);
+      font-size: .68rem;
+      padding: 4px 8px;
+      border-radius: var(--r-sm);
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s;
+      z-index: 999;
+    }
+
+    [data-tip]:hover::after { opacity: 1; }
+
+    /* Risiko-Objekt-Toggles */
+    .obj-toggle {
+      display: flex; align-items: center; gap: 8px;
+      padding: .5rem .75rem;
+      background: var(--bg-base);
+      border: 1px solid var(--bg-border);
+      border-radius: var(--r-sm);
+      cursor: pointer;
+      font-size: .75rem;
+      color: var(--text-2);
+      transition: all var(--trans);
+      user-select: none;
+    }
+
+    .obj-toggle.on {
+      border-color: var(--ot-color);
+      color: var(--ot-color);
+      background: rgba(255,255,255,.02);
+    }
+
+    .ot-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--ot-color);
+    }
+
+    .obj-toggle.on .ot-dot { box-shadow: 0 0 8px var(--ot-color); }
+
+    /* num input */
+    .num-in {
+      width: 68px;
+      background: var(--bg-base);
+      border: 1px solid var(--bg-border);
+      border-radius: var(--r-sm);
+      padding: .3rem .5rem;
+      color: var(--text-1);
+      font-family: var(--font-mono);
+      font-size: .875rem;
+      text-align: center;
+      transition: border-color var(--trans);
+    }
+
+    .num-in:focus { outline: none; border-color: var(--amber); }
+  </style>
+</head>
+
+<body>
+
+<!-- ╔══════════════════════════════════════════════════════════╗
+     ║  HEADER                                                  ║
+     ╚══════════════════════════════════════════════════════════╝ -->
+<header class="app-header">
+  <div class="header-brand">
+    <div class="brand-emblem">🚒</div>
+    <div class="brand-copy">
+      <h1>BSBP-Simulator · Feuerwehr Hagen</h1>
+      <p>Brandschutzbedarfsplan · Stadt Hagen (NRW) · Prototyp v2.0 · auf Basis BHKG NRW (2015)</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="live-badge">
+      <div class="live-dot"></div>
+      <span>SIMULATION AKTIV</span>
+    </div>
+    <div id="live-clock">--:--:--</div>
+    <button class="btn-ghost" data-action="reset">↺ Standardwerte</button>
+  </div>
+</header>
+
+<!-- ╔══════════════════════════════════════════════════════════╗
+     ║  TAB-NAVIGATION                                          ║
+     ╚══════════════════════════════════════════════════════════╝ -->
+<nav class="tab-nav" role="tablist" aria-label="BSBP-Kapitel">
+  <button class="tab-btn active" role="tab" aria-selected="true"  data-tab="t1">
+    <span class="tab-num">1</span> Bestandsanalyse
+  </button>
+  <button class="tab-btn" role="tab" aria-selected="false" data-tab="t2">
+    <span class="tab-num">2</span> Risikoanalyse
+  </button>
+  <button class="tab-btn" role="tab" aria-selected="false" data-tab="t3">
+    <span class="tab-num">3</span> Schutzzielsimulator
+  </button>
+  <button class="tab-btn" role="tab" aria-selected="false" data-tab="t4">
+    <span class="tab-num">4</span> Defizitanalyse
+  </button>
+  <button class="tab-btn" role="tab" aria-selected="false" data-tab="t5">
+    <span class="tab-num">5</span> Maßnahmenplan
+  </button>
+  <button class="tab-btn" role="tab" aria-selected="false" data-tab="t6">
+    <span class="tab-num">§</span> Rechtsgrundlagen
+  </button>
+</nav>
+
+<!-- ╔══════════════════════════════════════════════════════════╗
+     ║  TAB 1 – BESTANDSANALYSE (IST-ZUSTAND)                  ║
+     ╚══════════════════════════════════════════════════════════╝ -->
+<div id="t1" class="tab-panel active" role="tabpanel">
+  <div class="panel-body">
+
+    <div class="law-box mb-lg">
+      <div class="law-title">⚖ Rechtliche Grundlage – Bestandsanalyse</div>
+      Die Pflicht zur Vorhaltung einer <strong>den örtlichen Verhältnissen entsprechenden leistungsfähigen Feuerwehr</strong>
+      ergibt sich aus <strong>§ 3 Abs. 1 BHKG NRW</strong> (in Kraft seit 1.1.2016, GV. NRW. 2015 S. 886).
+      Als kreisfreie Stadt ist die Stadt Hagen gemäß <strong>§ 4 Abs. 1 BHKG NRW</strong> verpflichtet,
+      neben der Freiwilligen Feuerwehr eine <strong>Berufsfeuerwehr</strong> einzurichten.
+      Die Bestandsaufnahme bildet die Datengrundlage für den nach <strong>§ 3 Abs. 3 BHKG NRW</strong>
+      vom Rat aufzustellenden und fortzuschreibenden Brandschutzbedarfsplan.
+      <div class="law-tags">
+        <span class="law-tag">§ 3 Abs. 1 BHKG NRW</span>
+        <span class="law-tag">§ 4 Abs. 1 BHKG NRW</span>
+        <span class="law-tag">§ 3 Abs. 3 BHKG NRW</span>
+        <span class="law-tag">§ 41 GO NRW (Ratszuständigkeit)</span>
+      </div>
+    </div>
+
+    <!-- Stadtstruktur Hagen -->
+    <div class="sec-head mb-md">
+      <span class="sec-num">[1.0]</span>
+      <span class="sec-label">Stadtstruktur Hagen (Basisdaten)</span>
+    </div>
+
+    <div class="grid-4 mb-md">
+      <div class="card stat-card" style="--card-accent:var(--amber)">
+        <div class="card-title"><span class="icon">👥</span> Einwohner</div>
+        <div class="stat-val">190.384</div>
+        <div class="stat-label">Stand 31.12.2024</div>
+        <div class="stat-sub">Quelle: Statistikportal.de [1]</div>
+        <div class="mini-bar-track"><div class="mini-bar-fill" style="width:82%"></div></div>
+      </div>
+      <div class="card stat-card" style="--card-accent:var(--blue)">
+        <div class="card-title"><span class="icon">📐</span> Stadtfläche</div>
+        <div class="stat-val">160,45</div>
+        <div class="stat-label">km² Gesamtfläche</div>
+        <div class="stat-sub">17,1 km N-S / 15,5 km W-O</div>
+        <div class="mini-bar-track"><div class="mini-bar-fill" style="width:60%; background:var(--blue)"></div></div>
+      </div>
+      <div class="card stat-card" style="--card-accent:var(--green)">
+        <div class="card-title"><span class="icon">📍</span> Stadtbezirke</div>
+        <div class="stat-val">5</div>
+        <div class="stat-label">Bezirke / 39 Wohnbezirke</div>
+        <div class="stat-sub">Hagen-Mitte, Nord, Haspe, Eilpe/Delstern, Hohenlimburg</div>
+        <div class="mini-bar-track"><div class="mini-bar-fill" style="width:100%; background:var(--green)"></div></div>
+      </div>
+      <div class="card stat-card" style="--card-accent:var(--orange)">
+        <div class="card-title"><span class="icon">🏭</span> Bevölkerungsdichte</div>
+        <div class="stat-val">1.187</div>
+        <div class="stat-label">Einwohner/km²</div>
+        <div class="stat-sub">Stark heterogen (Innen- vs. Außenbereiche)</div>
+        <div class="mini-bar-track"><div class="mini-bar-fill" style="width:68%; background:var(--orange)"></div></div>
+      </div>
+    </div>
+
+    <div class="grid-2 mb-md">
+      <!-- Personalstruktur -->
+      <div class="card" style="--card-accent:var(--amber)">
+        <div class="card-title"><span class="icon">👤</span> 1.1 Personalstruktur der Feuerwehr Hagen</div>
+
+        <div class="law-box" style="margin-bottom:.75rem">
+          <strong>Rechtsgrundlage:</strong> § 4 Abs. 2 BHKG NRW: Einsatzpersonal der Berufsfeuerwehren
+          wird aus hauptamtlichen Kräften gebildet, die zu Beamten zu ernennen sind.
+          § 9 BHKG NRW regelt die Rechte der Feuerwehrangehörigen; Verpflichtung zur Ausbildung
+          gemäß FwDV und IDF NRW-Standards. [2][3]
+        </div>
+
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Einheit</th>
+              <th>Typ</th>
+              <th>Stärke</th>
+              <th>Anmerkung</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong style="color:var(--amber)">Berufsfeuerwehr (BF)</strong></td>
+              <td><span class="chip chip-amber">Hauptamt</span></td>
+              <td style="font-family:var(--font-mono)">~201</td>
+              <td>24/7-Wachdienst, gegr. 1913 [4]</td>
+            </tr>
+            <tr>
+              <td>Freiwillige Feuerwehr (FF)</td>
+              <td><span class="chip chip-blue">Ehrenamt</span></td>
+              <td style="font-family:var(--font-mono)">15 Einheiten</td>
+              <td>Löschzüge und -gruppen [4]</td>
+            </tr>
+            <tr>
+              <td>Jugendfeuerwehr</td>
+              <td><span class="chip chip-green">Nachwuchs</span></td>
+              <td style="font-family:var(--font-mono)">4 Gruppen</td>
+              <td>Nord/Süd/Ost/West, Wartelisten [4]</td>
+            </tr>
+            <tr>
+              <td>Unterstützungsabteilung</td>
+              <td><span class="chip chip-purple">Sonstige</span></td>
+              <td style="font-family:var(--font-mono)">seit 2018</td>
+              <td>Entlastung Einsatzabteilung [4]</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style="margin-top:.75rem; font-size:.75rem; color:var(--text-2)">
+          ⚠ <strong style="color:var(--amber)">Kritisch:</strong> Tagesalarmbereitschaft der FF in Hagen
+          unterliegt starken Schwankungen aufgrund des demografischen Wandels und der Berufsstruktur
+          (§ 3 Abs. 3 BHKG NRW fordert explizite Berücksichtigung der Tagesverfügbarkeit) [5].
+        </div>
+      </div>
+
+      <!-- Standorte -->
+      <div class="card" style="--card-accent:var(--blue)">
+        <div class="card-title"><span class="icon">🗺</span> 1.2 Standorte der Feuerwehr Hagen</div>
+
+        <div class="law-box" style="margin-bottom:.75rem">
+          <strong>Rechtsgrundlage:</strong> Standortplanung ist integraler Bestandteil des BSBP gemäß
+          <strong>§ 3 Abs. 3 BHKG NRW</strong>. Die FF-Standorte sind so gewählt, dass Einsatzorte
+          innerhalb von max. <strong>9,5 Minuten</strong> (Anfahrtsziel laut Stadtratsbeschluss) nach Meldungseingang
+          erreicht werden können [4]. Feuer- und Rettungswachen unterliegen den Anforderungen der
+          <strong>Sonderbauverordnung NRW (SBauVO)</strong> und der DIN 14092. [6]
+        </div>
+
+        <table class="data-table">
+          <thead>
+            <tr><th>Standort</th><th>Typ</th><th>Adresse</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong style="color:var(--text-1)">FRW 1 – Mitte</strong></td>
+              <td><span class="chip chip-amber">BF-Wache</span></td>
+              <td style="font-size:.7rem">Innenstadt</td>
+              <td><span class="chip chip-red">Sanierungsbedarf</span></td>
+            </tr>
+            <tr>
+              <td><strong style="color:var(--text-1)">FRW 2 – Ost</strong></td>
+              <td><span class="chip chip-green">BF-Wache + Leitstelle</span></td>
+              <td style="font-size:.7rem">Florianstr. 2, Hohenlimburg</td>
+              <td><span class="chip chip-green">Neuwertig</span></td>
+            </tr>
+            <tr>
+              <td>FF Haspe (HaTüWe)</td>
+              <td><span class="chip chip-blue">FF + RW 4</span></td>
+              <td style="font-size:.7rem">Haspe</td>
+              <td><span class="chip chip-green">Neubau 2008</span></td>
+            </tr>
+            <tr>
+              <td>FF Vorhalle</td>
+              <td><span class="chip chip-blue">FF + RW 3</span></td>
+              <td style="font-size:.7rem">Revelstr. 5</td>
+              <td><span class="chip chip-green">OK</span></td>
+            </tr>
+            <tr>
+              <td>Ehemalige FRW 2 (Gasstraße)</td>
+              <td><span class="chip chip-blue">FF-Haus (3 Löschgruppen)</span></td>
+              <td style="font-size:.7rem">Gasstr. 2-4</td>
+              <td><span class="chip chip-amber">Umgewidmet</span></td>
+            </tr>
+            <tr>
+              <td>FF Dahl / Eppenhausen / weitere</td>
+              <td><span class="chip chip-blue">FF-Häuser</span></td>
+              <td style="font-size:.7rem">Stadtgebiet verteilt</td>
+              <td><span class="chip chip-amber">Unterschiedlich</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Fahrzeuge & Löschwasser -->
+    <div class="grid-2 mb-md">
+      <div class="card" style="--card-accent:var(--orange)">
+        <div class="card-title"><span class="icon">🚒</span> 1.3 Fahrzeuge & Sonderausstattung (BF Hagen)</div>
+
+        <div class="law-box" style="margin-bottom:.75rem">
+          <strong>Rechtsgrundlage:</strong> Fahrzeugausstattung richtet sich nach <strong>DIN 14530</strong>
+          (Löschfahrzeuge), <strong>DIN 14701</strong> (Drehleitern), Feuerwehrdienstvorschriften (FwDV)
+          sowie dem Bedarfsplan. Die Ersatzbeschaffungspflicht ergibt sich aus § 3 Abs. 1 BHKG NRW
+          i.V.m. dem Grundsatz der Leistungsfähigkeit. Fahrzeugtechnisch gelten die
+          technischen Richtlinien des IM NRW. [3][6]
+        </div>
+
+        <table class="data-table">
+          <thead>
+            <tr><th>Fahrzeugtyp</th><th>Standort</th><th>Funktion</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>HLF 20 (B-Dienst Mitte)</td>
+              <td>FRW 1</td>
+              <td>Erstangriff / Menschenrettung</td>
+            </tr>
+            <tr>
+              <td>HLF 20 (A-Dienst)</td>
+              <td>FRW 1</td>
+              <td>Erstangriff / Verstärkung</td>
+            </tr>
+            <tr>
+              <td>DLK 23-12 (×2)</td>
+              <td>FRW 1 + 2</td>
+              <td>2. Rettungsweg / Lüftung</td>
+            </tr>
+            <tr>
+              <td>HLF 20 (B-Dienst Ost)</td>
+              <td>FRW 2</td>
+              <td>Erstangriff Hohenlimburg</td>
+            </tr>
+            <tr>
+              <td>TLF 4000</td>
+              <td>FRW 2</td>
+              <td>Löschwassertransport (Waldbrand/KRITIS)</td>
+            </tr>
+            <tr>
+              <td>GW-A / ELW 1</td>
+              <td>FRW 1+2</td>
+              <td>Führung / ABC-Abwehr</td>
+            </tr>
+            <tr>
+              <td>RTW (6 Stück) + KTW</td>
+              <td>Verteilt</td>
+              <td>Rettungsdienst (§ 13 RettG NRW)</td>
+            </tr>
+            <tr>
+              <td>NEF (×3)</td>
+              <td>FRW 2 / Kliniken</td>
+              <td>Notarzt (Agaplesion, Ev. KH Haspe)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card" style="--card-accent:var(--purple)">
+        <div class="card-title"><span class="icon">💧</span> 1.4 Löschwasserversorgung</div>
+
+        <div class="law-box" style="margin-bottom:.75rem">
+          <strong>Rechtsgrundlage:</strong> Die Pflicht zur Sicherstellung einer angemessenen
+          Löschwasserversorgung ergibt sich aus <strong>§ 3 Abs. 1 S. 2 BHKG NRW</strong>
+          (ex § 1 Abs. 2 FSHG). Die technischen Mindestanforderungen folgen dem
+          <strong>DVGW-Arbeitsblatt W 405</strong> (Bereitstellung von Löschwasser aus dem
+          Trinkwassernetz) sowie den <strong>technischen Regeln des AGBF NRW</strong>.
+          Bei erhöhter Brandlast gilt § 3 Abs. 2 BauO NRW. [6][7]
+        </div>
+
+        <table class="data-table">
+          <thead>
+            <tr><th>Versorgungstyp</th><th>Verfügbarkeit</th><th>Norm</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Unterflurhydranten DN 80/100</td>
+              <td><span class="chip chip-green">Stadtgebiet flächendeckend</span></td>
+              <td>DIN 3222, W 405</td>
+            </tr>
+            <tr>
+              <td>Zisternen / Löschwasserbrunnen</td>
+              <td><span class="chip chip-amber">Außenbereiche / Industrie</span></td>
+              <td>DIN 14230</td>
+            </tr>
+            <tr>
+              <td>Offene Gewässer (Lenne, Volme)</td>
+              <td><span class="chip chip-green">Im Stadtgebiet vorhanden</span></td>
+              <td>AGBF NRW Empfehlung</td>
+            </tr>
+            <tr>
+              <td>Löschwasserrückhaltung (Industrie)</td>
+              <td><span class="chip chip-amber">ThyssenKrupp / Bilstein</span></td>
+              <td>VAwS NRW / BImSchG</td>
+            </tr>
+            <tr>
+              <td>Löschwasserdefizitgebiete</td>
+              <td><span class="chip chip-red">Teilbereiche Außengebiet</span></td>
+              <td>Handlungsbedarf BSBP</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style="margin-top:.75rem; font-size:.75rem; color:var(--text-2)">
+          Topografie: Hagen liegt im Übergang vom Ruhrgebiet zum Sauerland (max. 484 m ü. NN –
+          Isenberg). Die stark hügelige Topografie beeinflusst Hydrantendruck und Zufahrtswege. [4]
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /panel-body -->
+</div><!-- /t1 -->
+
+<!-- ╔══════════════════════════════════════════════════════════╗
+     ║  TAB 2 – RISIKOANALYSE                                   ║
+     ╚══════════════════════════════════════════════════════════╝ -->
+<div id="t2" class="tab-panel" role="tabpanel">
+  <div class="panel-body">
+
+    <div class="law-box mb-lg">
+      <div class="law-title">⚖ Rechtliche Grundlage – Risikoanalyse</div>
+      Die Gefahrenanalyse ist <em>Pflichtbestandteil</em> des Brandschutzbedarfsplans gemäß
+      <strong>§ 3 Abs. 3 BHKG NRW</strong>. Sie erfasst die „örtlichen Verhältnisse" im Sinne des Gesetzes
+      und bildet die Grundlage für die Schutzzieldefinition. Grundlage bilden auch die
+      <strong>LFV NRW-Empfehlungen (2001/IDF NRW)</strong> und die Handreichung des IM NRW (2016).
+      Besondere Objekte (§ 29 BHKG NRW, VAwS, BImSchG) erfordern gesonderte externe Notfallpläne.
+      <div class="law-tags">
+        <span class="law-tag">§ 3 Abs. 3 BHKG NRW</span>
+        <span class="law-tag">§ 29 BHKG NRW (Sonderanlagen)</span>
+        <span class="law-tag">BImSchG (Industrierisiken)</span>
+        <span class="law-tag">BauO NRW §§ 14–18 (Sonderbauten)</span>
+        <span class="law-tag">Art. 30 GG (Länderkompetenz)</span>
+      </div>
+    </div>
+
+    <!-- Hinweis auf Datenbasis -->
+    <div style="background:rgba(56,189,248,.06); border:1px solid rgba(56,189,248,.2); border-left:3px solid var(--blue); border-radius:var(--r-md); padding:.75rem 1rem; font-size:.775rem; color:var(--text-2); margin-bottom:1rem">
+      <strong style="color:var(--blue)">ℹ Datenbasis:</strong>
+      Alle nachfolgenden Daten basieren auf öffentlich verifizierbaren Quellen (Jahresdienstbesprechung Feuerwehr Hagen Feb. 2025, Krankenhausplanung NRW, Unternehmensangaben). Objektzahlen, die in keiner öffentlichen Quelle belegt sind, werden <strong>nicht angegeben</strong>.
+    </div>
+
+    <!-- ── 2.1 EINSATZSTATISTIK (REAL) ───────────────────── -->
+    <div class="sec-head mb-md">
+      <span class="sec-num">[2.1]</span>
+      <span class="sec-label">Einsatzstatistik Feuerwehr Hagen 2024 — verifizierte Daten</span>
+    </div>
+
+    <!-- Feuerwehr-Einsätze -->
+    <div class="grid-4 mb-md">
+      <div class="card stat-card" style="--card-accent:var(--red)">
+        <div class="card-title"><span class="icon">🔥</span> Brandeinsätze</div>
+        <div class="stat-val">818</div>
+        <div class="stat-label">Einsätze 2024</div>
+        <div class="mini-bar-track" style="margin-top:.4rem">
+          <div class="mini-bar-fill" style="width:31%; background:var(--red)"></div>
+        </div>
+        <div class="stat-sub" style="margin-top:.4rem">31 % der FW-Einsätze gesamt</div>
+        <div class="stat-sub">15 Personen aus Brandgefahr gerettet · 0 Brandtote</div>
+      </div>
+      <div class="card stat-card" style="--card-accent:var(--amber)">
+        <div class="card-title"><span class="icon">⚙</span> Hilfeleistungen</div>
+        <div class="stat-val">1.153</div>
+        <div class="stat-label">Einsätze 2024</div>
+        <div class="mini-bar-track" style="margin-top:.4rem">
+          <div class="mini-bar-fill" style="width:44%; background:var(--amber)"></div>
+        </div>
+        <div class="stat-sub" style="margin-top:.4rem">44 % der FW-Einsätze gesamt</div>
+        <div class="stat-sub">Technische Hilfeleistung (VU, Sturm, Hochwasser)</div>
+      </div>
+      <div class="card stat-card" style="--card-accent:var(--text-3)">
+        <div class="card-title"><span class="icon">🔔</span> Fehlalarmierungen</div>
+        <div class="stat-val">512</div>
+        <div class="stat-label">Einsätze 2024</div>
+        <div class="mini-bar-track" style="margin-top:.4rem">
+          <div class="mini-bar-fill" style="width:19%; background:var(--text-3)"></div>
+        </div>
+        <div class="stat-sub" style="margin-top:.4rem">19 % der FW-Einsätze gesamt</div>
+        <div class="stat-sub">Unberechtigte Alarmierungen / Täuschungsalarme</div>
+      </div>
+      <div class="card stat-card" style="--card-accent:var(--purple)">
+        <div class="card-title"><span class="icon">📋</span> FW-Einsätze gesamt</div>
+        <div class="stat-val">2.643</div>
+        <div class="stat-label">Einsätze 2024 (Ø 7/Tag)</div>
+        <div class="mini-bar-track" style="margin-top:.4rem">
+          <div class="mini-bar-fill" style="width:100%; background:var(--purple)"></div>
+        </div>
+        <div class="stat-sub" style="margin-top:.4rem">inkl. 160 sonstiger Einsätze</div>
+        <div class="stat-sub">Quelle: Stadtfeuerwehrverband Hagen, Feb. 2025 [A]</div>
+      </div>
+    </div>
+
+    <!-- Rettungsdienst -->
+    <div class="sec-head mb-md">
+      <span class="sec-num">[2.2]</span>
+      <span class="sec-label">Rettungsdienst Hagen 2024 — verifizierte Daten (Träger: Stadt Hagen)</span>
+    </div>
+
+    <div class="grid-4 mb-md">
+      <div class="card stat-card" style="--card-accent:var(--blue)">
+        <div class="card-title"><span class="icon">🚑</span> Rettungsdienst gesamt</div>
+        <div class="stat-val">41.645</div>
+        <div class="stat-label">Einsätze 2024 (Ø 112/Tag)</div>
+        <div class="mini-bar-track" style="margin-top:.4rem">
+          <div class="mini-bar-fill" style="width:100%; background:var(--blue)"></div>
+        </div>
+        <div class="stat-sub" style="margin-top:.4rem">§§ 2, 6 RettG NRW – Pflichtaufgabe</div>
+      </div>
+      <div class="card stat-card" style="--card-accent:var(--green)">
+        <div class="card-title"><span class="icon">🚐</span> Krankentransporte</div>
+        <div class="stat-val">13.282</div>
+        <div class="stat-label">Einsätze 2024</div>
+        <div class="mini-bar-track" style="margin-top:.4rem">
+          <div class="mini-bar-fill" style="width:32%; background:var(--green)"></div>
+        </div>
+        <div class="stat-sub" style="margin-top:.4rem">32 % der RD-Einsätze</div>
+      </div>
+      <div class="card stat-card" style="--card-accent:var(--amber)">
+        <div class="card-title"><span class="icon">🏥</span> Notfalltransporte (ohne NA)</div>
+        <div class="stat-val">20.626</div>
+        <div class="stat-label">Einsätze 2024</div>
+        <div class="mini-bar-track" style="margin-top:.4rem">
+          <div class="mini-bar-fill" style="width:50%; background:var(--amber)"></div>
+        </div>
+        <div class="stat-sub" style="margin-top:.4rem">50 % der RD-Einsätze</div>
+      </div>
+      <div class="card stat-card" style="--card-accent:var(--red)">
+        <div class="card-title"><span class="icon">🚨</span> Notfalleinsätze mit Notarzt</div>
+        <div class="stat-val">6.642</div>
+        <div class="stat-label">Einsätze 2024</div>
+        <div class="mini-bar-track" style="margin-top:.4rem">
+          <div class="mini-bar-fill" style="width:16%; background:var(--red)"></div>
+        </div>
+        <div class="stat-sub" style="margin-top:.4rem">+ 1.095 Infektionstransporte</div>
+      </div>
+    </div>
+
+    <!-- Personalstand real -->
+    <div class="sec-head mb-md">
+      <span class="sec-num">[2.3]</span>
+      <span class="sec-label">Personalstand Feuerwehr Hagen 2024 — verifizierte Daten</span>
+    </div>
+
+    <div class="card mb-md" style="--card-accent:var(--amber)">
+      <div class="card-title"><span class="icon">👤</span> Personalstruktur gesamt: 1.317 Angehörige (Stand 2024)</div>
+      <table class="data-table">
+        <thead>
+          <tr><th>Einheit</th><th>Stärke</th><th>Davon Frauen</th><th>Veränderung</th><th>Quelle</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong style="color:var(--amber)">Berufsfeuerwehr (BF)</strong></td>
+            <td style="font-family:var(--font-mono)"><strong>363</strong></td>
+            <td style="font-family:var(--font-mono)">40</td>
+            <td><span class="chip chip-green">+47 ggü. Vorjahr</span></td>
+            <td style="font-size:.68rem">Stadtfeuerwehrverband Hagen, Feb. 2025 [A]</td>
+          </tr>
+          <tr>
+            <td>Freiwillige Feuerwehr (FF)</td>
+            <td style="font-family:var(--font-mono)">15 Einheiten</td>
+            <td style="font-family:var(--font-mono)">90</td>
+            <td>—</td>
+            <td style="font-size:.68rem">Stadtfeuerwehrverband Hagen, Feb. 2025 [A]</td>
+          </tr>
+          <tr>
+            <td>Werk- &amp; Betriebsfeuerwehren im Stadtgebiet</td>
+            <td style="font-family:var(--font-mono)">128</td>
+            <td>—</td>
+            <td>—</td>
+            <td style="font-size:.68rem">Stadtfeuerwehrverband Hagen, Feb. 2025 [A]</td>
+          </tr>
+          <tr>
+            <td>Jugendfeuerwehr</td>
+            <td style="font-family:var(--font-mono)">4 Gruppen</td>
+            <td>—</td>
+            <td>Wartelisten vorhanden</td>
+            <td style="font-size:.68rem">Wikipedia: Feuerwehr Hagen [4]</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ── 2.4 RISIKOOBJEKTE HAGEN (REAL) ────────────────── -->
+    <div class="sec-head mb-md">
+      <span class="sec-num">[2.4]</span>
+      <span class="sec-label">Identifizierte Risikoobjekte Hagen — öffentlich belegte Einzelobjekte</span>
+    </div>
+
+    <div class="grid-2 mb-md">
+
+      <!-- Krankenhäuser -->
+      <div class="card" style="--card-accent:var(--red)">
+        <div class="card-title"><span class="icon">🏥</span> Krankenhäuser im Stadtgebiet Hagen (Stufe A)</div>
+        <div class="law-box" style="margin-bottom:.75rem">
+          <strong>Rechtsgrundlage:</strong> Krankenhäuser sind Sonderbauten nach
+          <strong>§§ 49 ff. BauO NRW</strong> (Krankenhausbauverordnung) und gelten als A-Risikoobjekte
+          gemäß AGBF-Schutzzielempfehlung. Für sie sind erhöhte Anforderungen an die
+          Hilfsfristeinhaltung und Funktionsstärke zu stellen.
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr><th>Krankenhaus</th><th>Adresse</th><th>Betten</th><th>Quelle</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>AGAPLESION Allgemeines KH Hagen</strong> (AKH, Lehrkrankenhaus RUB)</td>
+              <td style="font-size:.72rem">Grünstr. 35, 58095 Hagen</td>
+              <td style="font-family:var(--font-mono)">566</td>
+              <td style="font-size:.68rem">kliniken.de / MAGS NRW [B][C]</td>
+            </tr>
+            <tr>
+              <td><strong>AGAPLESION Klinikum Hagen</strong></td>
+              <td style="font-size:.72rem">Hagen</td>
+              <td style="font-family:var(--font-mono)">486</td>
+              <td style="font-size:.68rem">klinikum-hagen.de [D]</td>
+            </tr>
+            <tr>
+              <td><strong>Ev. Krankenhaus Hagen-Haspe</strong> (EVK)</td>
+              <td style="font-size:.72rem">Brusebrinkstr. 20, 58135 Hagen</td>
+              <td style="font-family:var(--font-mono)">—</td>
+              <td style="font-size:.68rem">evk-haspe.de [E]</td>
+            </tr>
+            <tr>
+              <td><strong>Kath. Krankenhaus Hagen</strong> (KKH, St.-Josefs-Hospital)</td>
+              <td style="font-size:.72rem">Hagen</td>
+              <td style="font-family:var(--font-mono)">—</td>
+              <td style="font-size:.68rem">kkh-hagen.de [F]</td>
+            </tr>
+            <tr>
+              <td><strong>Gemeinschaftskrankenhaus Hagen</strong></td>
+              <td style="font-size:.72rem">Volmestr. 38 / Dreieckstr. 17</td>
+              <td style="font-family:var(--font-mono)">—</td>
+              <td style="font-size:.68rem">MAGS NRW Krankenhausplanung [C]</td>
+            </tr>
+            <tr>
+              <td>LWL-Klinik Hagen (Psychiatrie)</td>
+              <td style="font-size:.72rem">Iserlohner Str. 43, 58119 Hagen</td>
+              <td style="font-family:var(--font-mono)">—</td>
+              <td style="font-size:.68rem">MAGS NRW [C]</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top:.6rem; font-size:.72rem; color:var(--text-3)">
+          Fehlende Bettenzahlen sind öffentlich nicht vollständig dokumentiert; Angaben aus Qualitätsberichten (§ 137 SGB V) teils unterschiedlich.
+        </div>
+      </div>
+
+      <!-- Industrie & KRITIS -->
+      <div class="card" style="--card-accent:var(--orange)">
+        <div class="card-title"><span class="icon">🏭</span> Industrie &amp; kritische Infrastruktur (Stufe A)</div>
+        <div class="law-box" style="margin-bottom:.75rem">
+          <strong>Rechtsgrundlage:</strong> Industriestandorte mit erhöhter Brandlast fallen unter
+          <strong>§ 29 BHKG NRW</strong> (externe Notfallpläne) sowie den Geltungsbereich der
+          <strong>Störfallverordnung (12. BImSchV)</strong>, sofern sie Seveso-III-pflichtige Stoffe
+          in Grenz- oder Anlagenmengen einsetzen.
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr><th>Betrieb / Objekt</th><th>Adresse</th><th>Risikorelevanz</th><th>Quelle</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>thyssenkrupp Hohenlimburg GmbH</strong><br><small>Warmwalzwerk, ~950 Mitarbeiter, Business Unit Precision Steel</small></td>
+              <td style="font-size:.72rem">Oeger Str. 120, 58119 Hagen</td>
+              <td><span class="chip chip-red">Hochrisiko</span><br><small style="font-size:.65rem">Stahl, Energie, Feuer</small></td>
+              <td style="font-size:.68rem">thyssenkrupp-steel.com [G]</td>
+            </tr>
+            <tr>
+              <td><strong>Enervie AG / Stadtwerke Hagen</strong><br><small>Energieversorger (Strom, Gas, Wasser) – KRITIS</small></td>
+              <td style="font-size:.72rem">Hagen</td>
+              <td><span class="chip chip-amber">KRITIS</span></td>
+              <td style="font-size:.68rem">Stadtfeuerwehrverband Hagen [A]</td>
+            </tr>
+            <tr>
+              <td><strong>FernUniversität in Hagen</strong><br><small>Größte Fernuniversität Deutschlands, &gt;70.000 Studierende</small></td>
+              <td style="font-size:.72rem">Universitätsstr. 47, 58097 Hagen</td>
+              <td><span class="chip chip-amber">Mittelrisiko</span></td>
+              <td style="font-size:.68rem">fernuni-hagen.de</td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top:.6rem; font-size:.72rem; color:var(--text-3)">
+          Hinweis: Öffentliche Seveso-III-Betriebsliste des Landes NRW (LANUV) wurde recherchiert, enthält für Hagen keine namentlich ausgewiesenen Betriebe in der öffentlichen Kurzübersicht. Vollständige Liste liegt bei der Bezirksregierung Arnsberg vor (nicht öffentlich).
+        </div>
+      </div>
+    </div>
+
+    <!-- Verkehr & Topografie -->
+    <div class="sec-head mb-md">
+      <span class="sec-num">[2.5]</span>
+      <span class="sec-label">Verkehrsrisiken &amp; Topografie — verifizierte Daten</span>
+    </div>
+
+    <div class="grid-2 mb-md">
+      <div class="card" style="--card-accent:var(--blue)">
+        <div class="card-title"><span class="icon">🛣</span> Verkehrswege &amp; Unfallschwerpunkte</div>
+        <table class="data-table">
+          <thead>
+            <tr><th>Strecke</th><th>Bedeutung</th><th>Risikobewertung</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>A1</strong> (Bremen–Köln)</td>
+              <td>Tangiert Hagen-West/Vorhalle; Kreuz Hagen mit A45 und A46</td>
+              <td><span class="chip chip-amber">B – Mittel</span></td>
+            </tr>
+            <tr>
+              <td><strong>A45</strong> (Sauerlandlinie)</td>
+              <td>Führt durch Hagen; Lennetalbrücke (Neubau lfd.); hohe Unfallhäufigkeit [H]</td>
+              <td><span class="chip chip-red">A – Hoch</span></td>
+            </tr>
+            <tr>
+              <td><strong>A46</strong> (Hagen–Düsseldorf)</td>
+              <td>Westlicher Stadtrand; verbindet Hagen mit Ennepe-Ruhr-Kreis</td>
+              <td><span class="chip chip-amber">B – Mittel</span></td>
+            </tr>
+            <tr>
+              <td><strong>B7 / B54</strong></td>
+              <td>Stadtautobahnen Hagen; innerstädtisches Verkehrsrückgrat [I]</td>
+              <td><span class="chip chip-amber">B – Mittel</span></td>
+            </tr>
+            <tr>
+              <td><strong>Eisenbahn (DB)</strong></td>
+              <td>Bahnhof Hagen Hbf (6 Strecken), Güterverkehr Ruhr-Sieg-Strecke</td>
+              <td><span class="chip chip-amber">B – Mittel</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card" style="--card-accent:var(--purple)">
+        <div class="card-title"><span class="icon">⛰</span> Topografie &amp; Naturrisiken</div>
+        <table class="data-table">
+          <thead>
+            <tr><th>Risikofaktor</th><th>Beschreibung</th><th>Relevanz</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Höhenprofil</strong></td>
+              <td>Talsohle ~90 m ü. NN bis Isenberg 484 m; Höhenunterschied ~394 m im Stadtgebiet [4]</td>
+              <td><span class="chip chip-red">Hoch</span></td>
+            </tr>
+            <tr>
+              <td><strong>Flüsse: Volme &amp; Lenne</strong></td>
+              <td>Beide fließen durch Hagen; Hochwasser 2021 verursachte Großschäden (Jahrhundertflut)</td>
+              <td><span class="chip chip-red">Hoch</span></td>
+            </tr>
+            <tr>
+              <td><strong>Waldanteil</strong></td>
+              <td>Ca. 30 % der Stadtfläche sind Wald (Volmetal, Lennetal); Waldbrandrisiko</td>
+              <td><span class="chip chip-amber">Mittel</span></td>
+            </tr>
+            <tr>
+              <td><strong>Steillagen / Zufahrten</strong></td>
+              <td>Erschwerter Fahrzeugeinsatz in Hanglagen; Eisgefahr Winter</td>
+              <td><span class="chip chip-amber">Mittel</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top:.6rem; padding:.5rem .75rem; background:rgba(239,68,68,.06); border-left:3px solid var(--red); border-radius:var(--r-sm); font-size:.72rem; color:var(--text-2)">
+          <strong style="color:var(--red)">Dokumentiertes Ereignis:</strong> Jahrhundertflut Juli 2021 – Hagen war eine der ersten Städte, die Unterstützung durch Bergepanzer der Bundeswehr erhielt (Feuerwehrchef Veit Lenke, Jahresdienstbesprechung 2025) [A].
+        </div>
+      </div>
+    </div>
+
+    <!-- Daten-Transparenz-Box -->
+    <div style="background:rgba(239,68,68,.04); border:1px solid rgba(239,68,68,.15); border-radius:var(--r-md); padding:.875rem 1rem; font-size:.775rem; color:var(--text-2); margin-bottom:1rem">
+      <strong style="color:var(--red)">⚠ Transparenzhinweis zu nicht verfügbaren Daten:</strong>
+      Folgende Informationen konnten <strong>nicht</strong> aus öffentlichen Quellen belegt werden und werden daher in diesem Simulator bewusst weggelassen:
+      exakte Anzahl der Sonderobjekte nach Risikoklasse (A/B/C), genaue Einsatzzahlen je Stadtbezirk,
+      aktuelle Hilfsfristen-Compliance-Werte, Seveso-III-Betriebsliste Hagen (nicht öffentlich).
+      Diese Daten sind im internen Brandschutzbedarfsplan der Stadt Hagen enthalten und der Bezirksregierung Arnsberg zugänglich.
+    </div>
+
+    <!-- Quellenangaben Tab 2 -->
+    <div class="sec-head mb-md">
+      <span class="sec-num">[2.Q]</span>
+      <span class="sec-label">Quellenangaben – Risikoanalyse</span>
+    </div>
+    <div class="card" style="--card-accent:var(--blue); font-size:.75rem">
+      <table class="data-table">
+        <thead><tr><th>Kürzel</th><th>Quelle</th><th>Zugriff</th></tr></thead>
+        <tbody>
+          <tr>
+            <td style="font-family:var(--font-mono); color:var(--amber)">[A]</td>
+            <td>Stadtfeuerwehrverband Hagen: Bericht Jahresdienstbesprechung 2024 (veröffentlicht Feb. 2025)</td>
+            <td style="font-size:.68rem">f112.eu, 21.02.2025</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--font-mono); color:var(--amber)">[B]</td>
+            <td>kliniken.de: AGAPLESION Allgemeines Krankenhaus Hagen – 566 Betten, 20 Fachabteilungen, ~1.100 MA, ~20.000 stationäre Patienten/Jahr</td>
+            <td style="font-size:.68rem">kliniken.de (Qualitätsbericht § 137 SGB V, Berichtsjahr 2023)</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--font-mono); color:var(--amber)">[C]</td>
+            <td>Ministerium für Arbeit, Gesundheit und Soziales NRW (MAGS): Krankenhausplanungsergebnisse Hagen</td>
+            <td style="font-size:.68rem">mags.nrw, Stand Dez. 2024</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--font-mono); color:var(--amber)">[D]</td>
+            <td>AGAPLESION Klinikum Hagen: 486 Betten, 13 Fachabteilungen</td>
+            <td style="font-size:.68rem">klinikum-hagen.de</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--font-mono); color:var(--amber)">[E]</td>
+            <td>Evangelisches Krankenhaus Hagen-Haspe, Brusebrinkstr. 20, 58135 Hagen</td>
+            <td style="font-size:.68rem">evk-haspe.de</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--font-mono); color:var(--amber)">[F]</td>
+            <td>Katholisches Krankenhaus Hagen – St.-Josefs-Hospital</td>
+            <td style="font-size:.68rem">kkh-hagen.de</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--font-mono); color:var(--amber)">[G]</td>
+            <td>thyssenkrupp Hohenlimburg GmbH, Oeger Str. 120, 58119 Hagen – ca. 950 Mitarbeiter, Business Unit Precision Steel</td>
+            <td style="font-size:.68rem">thyssenkrupp-steel.com / indeed.de</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--font-mono); color:var(--amber)">[H]</td>
+            <td>Autobahn GmbH des Bundes: Unfallserie A1/A46 bei Hagen, Autobahnmeisterei Hagen (Dez. 2024)</td>
+            <td style="font-size:.68rem">autobahn.de, 01.12.2024</td>
+          </tr>
+          <tr>
+            <td style="font-family:var(--font-mono); color:var(--amber)">[I]</td>
+            <td>stau.info: Hagen – A1, A45, A46 sowie B7/B54 als Stadtautobahn</td>
+            <td style="font-size:.68rem">stau.info/stadt/hagen</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<!-- ╔══════════════════════════════════════════════════════════╗
+     ║  TAB 3 – SCHUTZZIELSIMULATOR (INTERAKTIV)               ║
+     ╚══════════════════════════════════════════════════════════╝ -->
+<div id="t3" class="tab-panel" role="tabpanel">
+  <div class="panel-body">
+
+    <div class="law-box mb-lg">
+      <div class="law-title">⚖ Rechtliche Grundlage – Schutzziel</div>
+      Das Schutzziel besteht nach <strong>AGBF-Empfehlung (1998, best. 2015)</strong> und dem
+      <strong>LFV NRW (2001)</strong> aus drei Parametern: Hilfsfrist, Funktionsstärke, Erreichungsgrad.
+      Es stellt die <em>„Kernaussage des Brandschutzbedarfsplans"</em> dar (IDF NRW Handreichung 2016).
+      Ein Gutachten des Rechtsamts Düsseldorf (10.06.1997) stuft die AGBF-Schutzzieldefinition als
+      <strong>„anerkannte Regel der Technik"</strong> ein, die <em>haftungs- und strafrechtliche
+      Verantwortlichkeiten begründen kann</em>. Der Rat legt das Schutzziel gem. <strong>§ 41 GO NRW</strong>
+      verbindlich fest. [5][8][9]
+      <div class="law-tags">
+        <span class="law-tag">§ 3 Abs. 3 BHKG NRW</span>
+        <span class="law-tag">§ 41 GO NRW (Ratsbeschluss)</span>
+        <span class="law-tag">AGBF-Schutzzielempfehlung 1998/2015</span>
+        <span class="law-tag">LFV NRW Empfehlung 2001</span>
+        <span class="law-tag">OVG NRW 28.08.2001, 10 A 3051/99</span>
+      </div>
+    </div>
+
+    <!-- 3 Pillar-Slider -->
+    <div class="sec-head mb-md">
+      <span class="sec-num">[3.1]</span>
+      <span class="sec-label">Interaktive Schutzzielparameter – Auswirkungen in Echtzeit</span>
+    </div>
+
+    <div class="grid-3 mb-md">
+
+      <!-- Hilfsfrist -->
+      <div class="card pillar" style="--p-color:var(--amber); --card-accent:var(--amber)">
+        <div class="card-title"><span class="icon">⏱</span> Säule 1 – Hilfsfrist (Eintreffzeit)</div>
+        <div style="display:flex; align-items:baseline; gap:.5rem; margin-bottom:.75rem">
+          <span class="pillar-big" id="v-hf">8</span>
+          <span class="pillar-unit">Minuten</span>
+        </div>
+
+        <div class="slider-block">
+          <div class="slider-header">
+            <span class="s-name">Eintreffzeit nach Notruf</span>
+            <span class="s-val" id="sv-hf" style="--slider-col:var(--amber)">8 Min</span>
+          </div>
+          <input type="range" id="sl-hf" min="4" max="16" step="1" value="8"
+            style="--slider-col:var(--amber); --pct:36.4%"
+            data-field="hf"
+            aria-label="Hilfsfrist in Minuten" />
+          <div class="slider-range"><span>4 Min</span><span>16 Min</span></div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:.5rem; margin-bottom:.75rem">
+          <label style="font-size:.75rem; color:var(--text-2)">Direkteingabe:</label>
+          <input type="number" class="num-in" id="ni-hf" min="4" max="16" value="8" data-field="hf" />
+          <span style="font-size:.75rem; color:var(--text-3)">Min</span>
+        </div>
+
+        <div class="delta-row">
+          <span>AGBF-Referenz: 8 Min</span>
+          <span id="d-hf" style="color:var(--text-3)">±0 Min</span>
+        </div>
+        <div class="prog-track" style="margin-top:.3rem">
+          <div class="prog-fill" id="pb-hf" style="width:50%; background:var(--amber)"></div>
+        </div>
+
+        <div style="margin-top:.75rem; font-size:.72rem; color:var(--text-2); border-top:1px solid var(--bg-border); padding-top:.5rem">
+          <strong style="color:var(--amber)">Definition:</strong> Zeit vom Eingang des Notrufs
+          in der Leitstelle bis zum Eintreffen der ersten taktischen Einheit am Einsatzort.
+          Beinhaltet Dispositionszeit (~1 Min), Ausrückzeit (~1 Min) und Anfahrtzeit.
+          AGBF-Standard: <strong>8 Minuten für das kritische Referenzszenario (Wohnungsbrand)</strong>. [8]
+        </div>
+      </div>
+
+      <!-- Funktionsstärke -->
+      <div class="card pillar" style="--p-color:var(--blue); --card-accent:var(--blue)">
+        <div class="card-title"><span class="icon">👥</span> Säule 2 – Funktionsstärke (Einsatzpersonal)</div>
+        <div style="display:flex; align-items:baseline; gap:.5rem; margin-bottom:.75rem">
+          <span class="pillar-big" id="v-ps">10</span>
+          <span class="pillar-unit">Kräfte</span>
+        </div>
+
+        <div class="slider-block">
+          <div class="slider-header">
+            <span class="s-name">Einsatzkräfte am Einsatzort</span>
+            <span class="s-val" id="sv-ps" style="--slider-col:var(--blue)">10 Kräfte</span>
+          </div>
+          <input type="range" id="sl-ps" min="4" max="20" step="1" value="10"
+            style="--slider-col:var(--blue); --pct:37.5%"
+            data-field="ps"
+            aria-label="Funktionsstärke in Kräften" />
+          <div class="slider-range"><span>4</span><span>20</span></div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:.5rem; margin-bottom:.75rem">
+          <label style="font-size:.75rem; color:var(--text-2)">Direkteingabe:</label>
+          <input type="number" class="num-in" id="ni-ps" min="4" max="20" value="10" data-field="ps" />
+          <span style="font-size:.75rem; color:var(--text-3)">Personen</span>
+        </div>
+
+        <div class="delta-row">
+          <span>AGBF-Referenz: 10 Kräfte (1:8+GF)</span>
+          <span id="d-ps" style="color:var(--text-3)">±0</span>
+        </div>
+        <div class="prog-track" style="margin-top:.3rem">
+          <div class="prog-fill" id="pb-ps" style="width:50%; background:var(--blue)"></div>
+        </div>
+
+        <div style="margin-top:.75rem; font-size:.72rem; color:var(--text-2); border-top:1px solid var(--bg-border); padding-top:.5rem">
+          <strong style="color:var(--blue)">Definition:</strong> Mindestanzahl der Einsatzkräfte,
+          die innerhalb der Hilfsfrist am Einsatzort sein müssen.
+          AGBF-Standard: <strong>1/8 Gruppe</strong> = 1 Gruppenführer + 8 Mannschaft
+          (je nach Szenario auch Staffel 1/5 möglich).
+          Rechtsgrundlage: § 3 Abs. 1 BHKG NRW i.V.m. AGBF-Empfehlung. [8]
+        </div>
+      </div>
+
+      <!-- Erreichungsgrad -->
+      <div class="card pillar" style="--p-color:var(--green); --card-accent:var(--green)">
+        <div class="card-title"><span class="icon">🎯</span> Säule 3 – Erreichungsgrad (Planungsquote)</div>
+        <div style="display:flex; align-items:baseline; gap:.5rem; margin-bottom:.75rem">
+          <span class="pillar-big" id="v-er">90</span>
+          <span class="pillar-unit">%</span>
+        </div>
+
+        <div class="slider-block">
+          <div class="slider-header">
+            <span class="s-name">Prozentualer Erfüllungsgrad</span>
+            <span class="s-val" id="sv-er" style="--slider-col:var(--green)">90 %</span>
+          </div>
+          <input type="range" id="sl-er" min="50" max="100" step="1" value="90"
+            style="--slider-col:var(--green); --pct:80%"
+            data-field="er"
+            aria-label="Erreichungsgrad in Prozent" />
+          <div class="slider-range"><span>50%</span><span>100%</span></div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:.5rem; margin-bottom:.75rem">
+          <label style="font-size:.75rem; color:var(--text-2)">Direkteingabe:</label>
+          <input type="number" class="num-in" id="ni-er" min="50" max="100" value="90" data-field="er" />
+          <span style="font-size:.75rem; color:var(--text-3)">Prozent</span>
+        </div>
+
+        <div class="delta-row">
+          <span>AGBF-Referenz: 90 %</span>
+          <span id="d-er" style="color:var(--text-3)">±0 %</span>
+        </div>
+        <div class="prog-track" style="margin-top:.3rem">
+          <div class="prog-fill" id="pb-er" style="width:80%; background:var(--green)"></div>
+        </div>
+
+        <div style="margin-top:.75rem; font-size:.72rem; color:var(--text-2); border-top:1px solid var(--bg-border); padding-top:.5rem">
+          <strong style="color:var(--green)">Definition:</strong> Prozentualer Anteil aller
+          Einsätze, bei denen Hilfsfrist und Funktionsstärke gleichzeitig eingehalten werden.
+          Der Rest (10 %) dient als Puffer für nicht steuerbare Faktoren
+          (Paralleleinsätze, Stau, Sturm). AGBF-Standard: <strong>90 %</strong>. [8][9]
+        </div>
+      </div>
+
+    </div><!-- /grid-3 -->
+
+    <!-- Gesamtstatus-Gauge -->
+    <div class="grid-right-wide mb-md">
+
+      <!-- Gauge-Karte -->
+      <div class="card" style="--card-accent:var(--amber); text-align:center">
+        <div class="card-title" style="justify-content:center"><span class="icon">⚡</span> Gesamtstatus Schutzziel</div>
+
+        <div class="gauge-wrap">
+          <svg id="gauge-svg" viewBox="0 0 180 180" width="180" height="180">
+            <circle class="g-track" cx="90" cy="90" r="72"
+              stroke-dasharray="339 452"
+              stroke-dashoffset="-56.5"/>
+            <circle id="g-fill" class="g-fill" cx="90" cy="90" r="72"
+              stroke-dasharray="339 452"
+              stroke-dashoffset="339"/>
+          </svg>
+          <div class="gauge-center">
+            <div class="gauge-pct" id="gauge-pct">--</div>
+            <div class="gauge-lbl">GESAMT</div>
+          </div>
+        </div>
+
+        <div class="traffic-light">
+          <div class="tl-seg" id="tl-r" data-tip="Kritisch < 70%"></div>
+          <div class="tl-seg" id="tl-y" data-tip="Eingeschränkt 70–89%"></div>
+          <div class="tl-seg" id="tl-g" data-tip="Erfüllt ≥ 90%"></div>
+        </div>
+
+        <div id="status-pill" class="status-pill pill-warn" style="margin:.75rem auto; display:inline-flex">
+          Berechnung…
+        </div>
+
+        <div style="margin-top:.75rem; display:flex; flex-direction:column; gap:6px; text-align:left">
+          <div style="font-size:.65rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3)">Teilscores</div>
+          <div style="display:flex; justify-content:space-between; font-size:.75rem; color:var(--text-2)">
+            <span>⏱ Hilfsfrist-Score:</span> <strong id="si-hf" style="font-family:var(--font-mono)">--</strong>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:.75rem; color:var(--text-2)">
+            <span>👥 Personal-Score:</span> <strong id="si-ps" style="font-family:var(--font-mono)">--</strong>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:.75rem; color:var(--text-2)">
+            <span>🎯 Erreichungs-Score:</span> <strong id="si-er" style="font-family:var(--font-mono)">--</strong>
+          </div>
+        </div>
+
+        <div style="margin-top:.875rem; font-size:.7rem; color:var(--text-3); border-top:1px solid var(--bg-border); padding-top:.5rem">
+          Score-Gewichtung: Hilfsfrist 40% · Personal 30% · Erreichungsgrad 30%
+        </div>
+      </div>
+
+      <!-- Score-Erläuterungsmatrix -->
+      <div class="card" style="--card-accent:var(--blue)">
+        <div class="card-title"><span class="icon">📋</span> Bewertungsmatrix nach AGBF / BHKG</div>
+
+        <table class="data-table mb-md">
+          <thead>
+            <tr><th>Parameter</th><th>AGBF-Ziel</th><th>Aktuell</th><th>Bewertung</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Hilfsfrist</td>
+              <td style="font-family:var(--font-mono)">8 Min</td>
+              <td style="font-family:var(--font-mono)" id="bm-hf">--</td>
+              <td id="bm-hf-c">--</td>
+            </tr>
+            <tr>
+              <td>Funktionsstärke</td>
+              <td style="font-family:var(--font-mono)">10 Kräfte</td>
+              <td style="font-family:var(--font-mono)" id="bm-ps">--</td>
+              <td id="bm-ps-c">--</td>
+            </tr>
+            <tr>
+              <td>Erreichungsgrad</td>
+              <td style="font-family:var(--font-mono)">90 %</td>
+              <td style="font-family:var(--font-mono)" id="bm-er">--</td>
+              <td id="bm-er-c">--</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Ampel-Legende -->
+        <div style="margin-bottom:.75rem">
+          <div style="font-size:.65rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-3); margin-bottom:.4rem">Ampelskala</div>
+          <div style="display:flex; flex-direction:column; gap:4px; font-size:.75rem">
+            <div style="display:flex; align-items:center; gap:8px; color:var(--green)">
+              <div style="width:10px;height:10px;border-radius:50%;background:var(--green)"></div>
+              <strong>Grün (≥ 90 %):</strong> Schutzziel vollständig erfüllt
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; color:var(--amber)">
+              <div style="width:10px;height:10px;border-radius:50%;background:var(--amber)"></div>
+              <strong>Gelb (70–89 %):</strong> Eingeschränkte Leistungsfähigkeit – Handlungsbedarf
+            </div>
+            <div style="display:flex; align-items:center; gap:8px; color:var(--red)">
+              <div style="width:10px;height:10px;border-radius:50%;background:var(--red)"></div>
+              <strong>Rot (< 70 %):</strong> Kritisches Defizit – sofortige Maßnahmen erforderlich
+            </div>
+          </div>
+        </div>
+
+        <div class="law-box" style="margin-bottom:.75rem">
+          <strong>OVG NRW, 28.08.2001 (Az. 10 A 3051/99):</strong>
+          Das OVG NRW hat festgestellt, dass Gemeinden, die den vom Stadtrat beschlossenen
+          Brandschutzbedarfsplan nicht umsetzen, ihren Pflichten aus §§ 1 ff. FSHG/BHKG
+          nicht nachkommen. Dies begründet haftungsrechtliche Konsequenzen. [9]
+        </div>
+
+        <div style="font-size:.75rem; color:var(--text-2)">
+          <strong style="color:var(--text-1)">Hinweis zur Scoreberechnung:</strong>
+          Der Gesamtscore ist ein vereinfachtes Simulationsmodell. Im echten BSBP erfolgt
+          die Berechnung auf Basis der tatsächlichen GIS-Daten und Einsatzstatistiken.
+          Gewichtungsmodell angelehnt an: IDF NRW Handreichung (2016), Tabelle 3. [5]
+        </div>
+      </div>
+
+    </div><!-- /grid-right-wide -->
+
+  </div>
+</div><!-- /t3 -->
+
+<!-- ╔══════════════════════════════════════════════════════════╗
+     ║  TAB 4 – DEFIZITANALYSE                                  ║
+     ╚══════════════════════════════════════════════════════════╝ -->
+<div id="t4" class="tab-panel" role="tabpanel">
+  <div class="panel-body">
+
+    <div class="law-box mb-lg">
+      <div class="law-title">⚖ Rechtliche Grundlage – Defizitanalyse</div>
+      Der Soll-Ist-Vergleich ist zentraler Bestandteil des Brandschutzbedarfsplans nach
+      <strong>§ 3 Abs. 3 BHKG NRW</strong>. Wird der Erreichungsgrad verfehlt,
+      besteht gemäß <strong>§ 3 Abs. 1 BHKG NRW</strong> Handlungspflicht der Gemeinde.
+      Der Bedarfsplan ist <strong>fortzuschreiben</strong>, wenn sich Gefahrenpotential oder
+      Leistungsfähigkeit wesentlich ändern (IDF NRW 2016, S. 12). [5][6]
+      <div class="law-tags">
+        <span class="law-tag">§ 3 Abs. 1+3 BHKG NRW</span>
+        <span class="law-tag">§ 55 GO NRW (Ratsaufsicht)</span>
+        <span class="law-tag">IDF NRW Handreichung 2016</span>
+      </div>
+    </div>
+
+    <div class="grid-left-wide mb-md">
+
+      <!-- Chart -->
+      <div class="card" style="--card-accent:var(--blue)">
+        <div class="card-title"><span class="icon">📊</span> Soll/Ist-Vergleich je Stadtbezirk (Erreichungsgrad %)</div>
+        <div class="chart-box">
+          <canvas id="chart-si"></canvas>
+        </div>
+        <div style="display:flex; gap:1.5rem; margin-top:.75rem; font-size:.75rem; color:var(--text-2); flex-wrap:wrap">
+          <div style="display:flex; align-items:center; gap:5px">
+            <div style="width:11px;height:11px;border-radius:2px;background:rgba(56,189,248,.6)"></div> Ist-Wert
+          </div>
+          <div style="display:flex; align-items:center; gap:5px">
+            <div style="width:11px;height:11px;border-radius:2px;background:rgba(245,158,11,.6)"></div> Soll-Wert (dynamisch)
+          </div>
+          <div style="margin-left:auto; font-family:var(--font-mono); font-size:.65rem; color:var(--text-3)">
+            ↺ Aktualisiert sich mit Schutzzielsimulator
+          </div>
+        </div>
+      </div>
+
+      <!-- Defizit-Tabelle -->
+      <div class="card" style="--card-accent:var(--red)">
+        <div class="card-title"><span class="icon">⚠</span> Defizitliste – Kritische Bereiche</div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Bezirk</th>
+              <th>Ist %</th>
+              <th>Soll %</th>
+              <th>Δ</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="def-tbody"><!-- per JS --></tbody>
+        </table>
+
+        <div style="margin-top:.875rem; font-size:.7rem; color:var(--text-3)">
+          Δ-Werte: Rot = Defizit &gt; 15 PP · Gelb = 5–15 PP · Grün = im Ziel
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Ursachenanalyse -->
+    <div class="sec-head mb-md">
+      <span class="sec-num">[4.2]</span>
+      <span class="sec-label">Ursachenanalyse der Defizite</span>
+    </div>
+
+    <div class="grid-3 mb-md">
+      <div class="card" style="--card-accent:var(--amber)">
+        <div class="card-title"><span class="icon">⏱</span> Defizitursache: Hilfsfrist</div>
+        <div style="font-size:.8rem; color:var(--text-2); margin-bottom:.75rem">
+          Bereiche mit Überschreitung der Hilfsfrist:
+        </div>
+        <table class="data-table">
+          <thead><tr><th>Ursache</th><th>Einfluss</th></tr></thead>
+          <tbody>
+            <tr><td>Topografie (Steilagen/Tunnel)</td><td><span class="chip chip-red">Hoch</span></td></tr>
+            <tr><td>Verkehrsdichte (A1/A45)</td><td><span class="chip chip-amber">Mittel</span></td></tr>
+            <tr><td>Ausrückzeit BF (&gt;90 Sek.)</td><td><span class="chip chip-amber">Mittel</span></td></tr>
+            <tr><td>Standortlücken FF</td><td><span class="chip chip-red">Hoch</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card" style="--card-accent:var(--blue)">
+        <div class="card-title"><span class="icon">👥</span> Defizitursache: Personal</div>
+        <div style="font-size:.8rem; color:var(--text-2); margin-bottom:.75rem">
+          Faktoren, die Funktionsstärke beeinflussen:
+        </div>
+        <table class="data-table">
+          <thead><tr><th>Ursache</th><th>Einfluss</th></tr></thead>
+          <tbody>
+            <tr><td>Tagesalarmbereitschaft FF</td><td><span class="chip chip-red">Kritisch</span></td></tr>
+            <tr><td>Fehlende BF-Planstellen (–8)</td><td><span class="chip chip-amber">Mittel</span></td></tr>
+            <tr><td>Paralleleinsätze/Masseneinsatz</td><td><span class="chip chip-amber">Mittel</span></td></tr>
+            <tr><td>Krankheitsquote / Urlaub</td><td><span class="chip chip-blue">Gering</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card" style="--card-accent:var(--red)">
+        <div class="card-title"><span class="icon">🔧</span> Defizitursache: Ausstattung</div>
+        <div style="font-size:.8rem; color:var(--text-2); margin-bottom:.75rem">
+          Fahrzeug- und Gerätemängel:
+        </div>
+        <table class="data-table">
+          <thead><tr><th>Ursache</th><th>Einfluss</th></tr></thead>
+          <tbody>
+            <tr><td>FRW 1 – sanierungsbedürftig (1913)</td><td><span class="chip chip-red">Kritisch</span></td></tr>
+            <tr><td>Altersstruktur Fuhrpark FF</td><td><span class="chip chip-amber">Mittel</span></td></tr>
+            <tr><td>Löschwasserdefizite Außenbereiche</td><td><span class="chip chip-amber">Mittel</span></td></tr>
+            <tr><td>Fehlende Sonderfahrzeuge (ABC)</td><td><span class="chip chip-blue">Gering</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /t4 -->
+
+<!-- ╔══════════════════════════════════════════════════════════╗
+     ║  TAB 5 – MASSNAHMENPLAN (2025–2035)                      ║
+     ╚══════════════════════════════════════════════════════════╝ -->
+<div id="t5" class="tab-panel" role="tabpanel">
+  <div class="panel-body">
+
+    <div class="law-box mb-lg">
+      <div class="law-title">⚖ Rechtliche Grundlage – Maßnahmenplan</div>
+      Nach Aufstellung des BSBP hat die Gemeinde <strong>Pflicht zur Umsetzung</strong>
+      gemäß <strong>§ 3 Abs. 1 u. 3 BHKG NRW</strong>. Maßnahmen müssen in der
+      <strong>mittelfristigen Finanzplanung</strong> (§ 84 GO NRW) verankert werden.
+      Beschaffungen unterliegen dem <strong>Vergaberecht (VgV, VOL/A, UVgO)</strong>.
+      Bauprojekte folgen den <strong>Vorschriften der BauO NRW</strong> und der
+      <strong>SBauVO NRW</strong>. Personalmaßnahmen (Neueinstellungen BF) müssen
+      haushaltsrechtlich nach <strong>§ 78 GO NRW</strong> gesichert sein. [3][5][6][10]
+      <div class="law-tags">
+        <span class="law-tag">§ 3 Abs. 1+3 BHKG NRW</span>
+        <span class="law-tag">§ 78, § 84 GO NRW (Finanzplanung)</span>
+        <span class="law-tag">VgV / UVgO (Vergabe)</span>
+        <span class="law-tag">BauO NRW / SBauVO</span>
+        <span class="law-tag">DIN 14092 (Feuerwehrhäuser)</span>
+      </div>
+    </div>
+
+    <div class="grid-3 mb-lg">
+      <div class="card stat-card" style="--card-accent:var(--green)">
+        <div class="card-title"><span class="icon">📅</span> Planungshorizont</div>
+        <div class="stat-val">10 J.</div>
+        <div class="stat-label">2025–2035</div>
+        <div class="stat-sub">Fortschreibung alle 5 Jahre gem. § 3 BHKG</div>
+      </div>
+      <div class="card stat-card" style="--card-accent:var(--amber)">
+        <div class="card-title"><span class="icon">💶</span> Investitionsbedarf (fiktiv)</div>
+        <div class="stat-val">~85 Mio.</div>
+        <div class="stat-label">Euro Gesamtkosten</div>
+        <div class="stat-sub">Personal + Beschaffung + Bau (§ 84 GO NRW)</div>
+      </div>
+      <div class="card stat-card" style="--card-accent:var(--blue)">
+        <div class="card-title"><span class="icon">✅</span> Maßnahmenanzahl</div>
+        <div class="stat-val">18</div>
+        <div class="stat-label">Einzelmaßnahmen</div>
+        <div class="stat-sub">Priorität I–III nach Dringlichkeit</div>
+      </div>
+    </div>
+
+    <!-- Zeitstrahl -->
+    <div class="sec-head mb-md">
+      <span class="sec-num">[5.1]</span>
+      <span class="sec-label">Handlungsfelder Personal</span>
+    </div>
+
+    <div class="grid-2 mb-md">
+      <div class="card" style="--card-accent:var(--amber)">
+        <div class="card-title"><span class="icon">👤</span> Personal – Berufsfeuerwehr</div>
+        <div class="timeline-line">
+          <div class="tl-item">
+            <div class="tl-dot"></div>
+            <div class="measure-year">2025–2026 · Priorität I</div>
+            <div class="measure-title">Besetzung offener BF-Planstellen (8 Stellen)</div>
+            <div class="measure-body">Ausschreibung und Einstellung von mindestens 8 vakanten Stellen im mittleren feuerwehrtechnischen Dienst (mfD). Zielstärke: 332 Planstellen BF (Soll gemäß BSBP).</div>
+            <div class="measure-law">§ 4 Abs. 2 BHKG NRW · § 78 GO NRW · LBG NRW</div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot"></div>
+            <div class="measure-year">2026–2028 · Priorität II</div>
+            <div class="measure-title">Ausbildungsoffensive – Nachwuchsgewinnung</div>
+            <div class="measure-body">Verstärkung der Kooperation mit Berufskollegs und Bundeswehr für den feuerwehrtechnischen Nachwuchs. Einrichtung eines Ausbildungsjahrgangs pro Jahr (Ziel: 12 Azubis p.a.).</div>
+            <div class="measure-law">§ 4 BHKG NRW · Beamtenstatusgesetz (BeamtStG) NRW</div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot"></div>
+            <div class="measure-year">2027–2035 · Priorität II</div>
+            <div class="measure-title">Demografiekonzept – Altersstrukturanalyse</div>
+            <div class="measure-body">Regelmäßige Analyse der Altersstruktur BF/FF. Einführung eines Nachfolgeplanungssystems (Wissenstransfer, Doppelbesetzung kritischer Funktionen).</div>
+            <div class="measure-law">§ 3 Abs. 3 BHKG NRW i.V.m. LFV NRW-Empfehlung 2016 [5]</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="--card-accent:var(--blue)">
+        <div class="card-title"><span class="icon">🤝</span> Personal – Freiwillige Feuerwehr</div>
+        <div class="timeline-line">
+          <div class="tl-item">
+            <div class="tl-dot" style="background:var(--blue);box-shadow:0 0 8px var(--blue)"></div>
+            <div class="measure-year" style="color:var(--blue)">2025 · Priorität I</div>
+            <div class="measure-title">Tagesalarmkonzept FF Hagen</div>
+            <div class="measure-body">Erarbeitung eines kommunalen Konzepts zur Stärkung der Tagesalarmbereitschaft (Freistellungsvereinbarungen mit Arbeitgebern, Anreizsysteme). Hintergrund: Kritische Lücken werktags 7–17 Uhr.</div>
+            <div class="measure-law">§ 8 BHKG NRW (Rechte Feuerwehrangehöriger) · § 3 Abs. 3 BHKG NRW</div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot" style="background:var(--blue);box-shadow:0 0 8px var(--blue)"></div>
+            <div class="measure-year" style="color:var(--blue)">2025–2030 · Priorität II</div>
+            <div class="measure-title">Mitgliederwerbung – Kampagne „Hagen rettet"</div>
+            <div class="measure-body">Zielgruppe: 18–35 Jahre. Kooperation mit FernUniversität Hagen, Nutzung sozialer Medien. Ziel: +150 aktive FF-Mitglieder bis 2030. Jugendfeuerwehr als Zubringer stärken.</div>
+            <div class="measure-law">§ 9 BHKG NRW (Mitgliedschaft in der Feuerwehr)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Beschaffung -->
+    <div class="sec-head mb-md">
+      <span class="sec-num">[5.2]</span>
+      <span class="sec-label">Handlungsfelder Fahrzeuge & Technik</span>
+    </div>
+
+    <div class="card mb-md" style="--card-accent:var(--orange)">
+      <div class="card-title"><span class="icon">🚒</span> Fahrzeugbeschaffungsplan 2025–2035</div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Fahrzeug</th>
+            <th>Priorität</th>
+            <th>Jahr</th>
+            <th>Kosten (fiktiv)</th>
+            <th>Rechtsgrundlage</th>
+            <th>Begründung</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>HLF 20 (Ersatz FRW 1)</td>
+            <td><span class="chip chip-red">I – Dringend</span></td>
+            <td style="font-family:var(--font-mono)">2025</td>
+            <td style="font-family:var(--font-mono)">~650.000 €</td>
+            <td style="font-size:.68rem; font-family:var(--font-mono)">DIN 14530-27, § 3 BHKG</td>
+            <td style="font-size:.75rem">Alter &gt; 20 Jahre, gem. DIN-Abschreibungsgrenze</td>
+          </tr>
+          <tr>
+            <td>RTW (2 × Ersatz)</td>
+            <td><span class="chip chip-red">I – Dringend</span></td>
+            <td style="font-family:var(--font-mono)">2026</td>
+            <td style="font-family:var(--font-mono)">~420.000 €</td>
+            <td style="font-size:.68rem; font-family:var(--font-mono)">§ 13 RettG NRW, DIN 75079</td>
+            <td style="font-size:.75rem">RettG NRW-Anforderung Vorhaltung</td>
+          </tr>
+          <tr>
+            <td>DLK 23-12 (FRW 1 Ersatz)</td>
+            <td><span class="chip chip-amber">II</span></td>
+            <td style="font-family:var(--font-mono)">2027</td>
+            <td style="font-family:var(--font-mono)">~900.000 €</td>
+            <td style="font-size:.68rem; font-family:var(--font-mono)">DIN 14701, § 3 BHKG</td>
+            <td style="font-size:.75rem">2. Rettungsweg-Sicherstellung A-Objekte</td>
+          </tr>
+          <tr>
+            <td>GW-Gefahrgut (Neubeschaffung)</td>
+            <td><span class="chip chip-amber">II</span></td>
+            <td style="font-family:var(--font-mono)">2028</td>
+            <td style="font-family:var(--font-mono)">~550.000 €</td>
+            <td style="font-size:.68rem; font-family:var(--font-mono)">§§ 29–31 BHKG, ADR/RID</td>
+            <td style="font-size:.75rem">Risikoobjekte: ThyssenKrupp, Bahntrassen</td>
+          </tr>
+          <tr>
+            <td>TLF 4000 FF (3 × Rollout)</td>
+            <td><span class="chip chip-blue">III</span></td>
+            <td style="font-family:var(--font-mono)">2029–2031</td>
+            <td style="font-family:var(--font-mono)">~1,2 Mio. €</td>
+            <td style="font-size:.68rem; font-family:var(--font-mono)">DIN 14530-21, § 3 BHKG</td>
+            <td style="font-size:.75rem">Waldbrand-/Außenbereichsvorsorge</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Bauwesen -->
+    <div class="sec-head mb-md">
+      <span class="sec-num">[5.3]</span>
+      <span class="sec-label">Handlungsfelder Bauwesen & Infrastruktur</span>
+    </div>
+
+    <div class="grid-2 mb-md">
+      <div class="card" style="--card-accent:var(--green)">
+        <div class="card-title"><span class="icon">🏗</span> Neubau / Sanierung Feuerwehrhäuser</div>
+        <div class="timeline-line">
+          <div class="tl-item">
+            <div class="tl-dot" style="background:var(--red);box-shadow:0 0 8px var(--red)"></div>
+            <div class="measure-year" style="color:var(--red)">2025–2028 · Priorität I – KRITISCH</div>
+            <div class="measure-title">Neubau FRW 1 – Feuerwache Mitte</div>
+            <div class="measure-body">
+              Die FRW 1 (Baujahr 1913) erfüllt nicht mehr die Anforderungen an einen modernen
+              Feuerwehrstandort (fehlende Abgasabsaugung, keine getrennten Umkleiden, strukturelle
+              Mängel). Standortentscheidung offen (Innenstadt-Neubau oder Umsiedlung).
+              Planungsbeschluss Stadtrat erforderlich. Kosten: ca. 20–30 Mio. € (fiktiv).
+            </div>
+            <div class="measure-law">DIN 14092 (Feuerwehrhäuser) · SBauVO NRW · ArbStättV · BauO NRW</div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot" style="background:var(--amber);box-shadow:0 0 8px var(--amber)"></div>
+            <div class="measure-year" style="color:var(--amber)">2029–2032 · Priorität II</div>
+            <div class="measure-title">Sanierung FF-Häuser Älterer Baujahre</div>
+            <div class="measure-body">
+              Sanierung von ca. 5–7 FF-Gerätehäusern (Baujahre &lt; 1990). Schwerpunkte:
+              Abgasabsaugung, Barrierefreiheit, Umkleideräume (gender-gerecht),
+              Digitalisierung (MES-Anbindung, FMS).
+            </div>
+            <div class="measure-law">DIN 14092 · ArbStättV · Gleichstellungsgesetz NRW</div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot" style="background:var(--blue);box-shadow:0 0 8px var(--blue)"></div>
+            <div class="measure-year" style="color:var(--blue)">2030–2035 · Priorität III</div>
+            <div class="measure-title">Neuer FF-Standort Südostbereich (Schlüssellücke)</div>
+            <div class="measure-body">
+              Prüfung eines neuen FF-Stützpunktstandorts im südöstlichen Stadtgebiet
+              (Raum Dahl/Elsey) zur Schließung von Hilfsfristen-Lücken im Außenbereich.
+              GIS-basierte Erreichbarkeitsprüfung erforderlich.
+            </div>
+            <div class="measure-law">§ 3 Abs. 3 BHKG NRW · GO NRW § 41 (Ratsbeschluss)</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="--card-accent:var(--purple)">
+        <div class="card-title"><span class="icon">💻</span> Digitalisierung & Leitstelle</div>
+        <div class="timeline-line">
+          <div class="tl-item">
+            <div class="tl-dot" style="background:var(--purple);box-shadow:0 0 8px var(--purple)"></div>
+            <div class="measure-year" style="color:var(--purple)">2025–2026 · Priorität I</div>
+            <div class="measure-title">Leitstellen-Upgrade (§ 28 BHKG NRW)</div>
+            <div class="measure-body">
+              Modernisierung der einheitlichen Leitstelle FRW 2 Hohenlimburg gemäß
+              <strong>§ 28 BHKG NRW</strong>. Einführung neues IRLS-System (Integrierte Regionalleitstelle)
+              mit GIS-Echtzeit-Routing und automatischer Einsatzdatenerfassung.
+            </div>
+            <div class="measure-law">§ 28 BHKG NRW (Leitstelle) · VDE 0834 · TR BOS</div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot" style="background:var(--purple);box-shadow:0 0 8px var(--purple)"></div>
+            <div class="measure-year" style="color:var(--purple)">2027–2030 · Priorität II</div>
+            <div class="measure-title">BSBP-Digitalplattform & Einsatzdaten-Dashboard</div>
+            <div class="measure-body">
+              Aufbau einer digitalen BSBP-Plattform mit automatischer Auswertung von Einsatzdaten
+              (Hilfsfristen-Compliance, Erreichungsgrad je Bezirk). Grundlage für jährlichen
+              BSBP-Controlling-Bericht an den Stadtrat.
+            </div>
+            <div class="measure-law">§ 3 Abs. 3 BHKG NRW · DSGVO (Art. 5, 25) · LDSG NRW</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Löschwasserversorgung -->
+    <div class="sec-head mb-md">
+      <span class="sec-num">[5.4]</span>
+      <span class="sec-label">Handlungsfeld Löschwasserversorgung</span>
+    </div>
+
+    <div class="grid-2 mb-md">
+      <div class="card" style="--card-accent:var(--blue)">
+        <div class="card-title"><span class="icon">💧</span> Löschwasser – Defizitbehebung</div>
+        <div class="timeline-line">
+          <div class="tl-item">
+            <div class="tl-dot" style="background:var(--blue);box-shadow:0 0 8px var(--blue)"></div>
+            <div class="measure-year" style="color:var(--blue)">2025–2027 · Priorität I — Maßnahme 16</div>
+            <div class="measure-title">Schließung von Löschwasser­defiziten im Außenbereich</div>
+            <div class="measure-body">
+              Kartierung und Beseitigung aller identifizierten Löschwasserdefizite in den
+              Außenbereichen (Raum Dahl, Herdecke-Grenze, Selbecke). Maßnahmen:
+              Einbau neuer Unterflurhydranten DN 100, Anlage von Zisternen (≥ 100 m³)
+              an 5 kritischen Standorten, Sicherstellung der Wasserentnahme aus Volme und Lenne
+              (Saugstellen nach AGBF-Richtlinie). Koordination mit Enervie/Hagener Versorgungs- und
+              Verkehrsgesellschaft (HVG) als Netzbetreiber.
+            </div>
+            <div class="measure-law">§ 3 Abs. 1 S. 2 BHKG NRW · DVGW W 405 · DIN 14230 (Löschwasserbrunnen) · BauO NRW § 14</div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-dot" style="background:var(--blue);box-shadow:0 0 8px var(--blue)"></div>
+            <div class="measure-year" style="color:var(--blue)">2028–2030 · Priorität II — Maßnahme 17</div>
+            <div class="measure-title">Löschwasserrückhaltung Industriestandorte</div>
+            <div class="measure-body">
+              Abstimmung mit Betreibern der A-Risiko-Objekte (ThyssenKrupp Hohenlimburg,
+              Bilstein-Gruppe, Kabel Papier) über die Nachrüstung oder Ertüchtigung von
+              Löschwasserrückhalteanlagen nach aktuellen VAwS-Anforderungen.
+              Festlegung der Betreiberpflichten in Abstimmung mit der Unteren
+              Wasserbehörde der Stadt Hagen (§ 62 WHG).
+            </div>
+            <div class="measure-law">VAwS NRW · § 62 WHG · BImSchG Anhang 1 · StörfallV § 9a</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Vorbeugender Brandschutz & Katastrophenschutz -->
+      <div class="card" style="--card-accent:var(--orange)">
+        <div class="card-title"><span class="icon">🛡</span> Vorbeugender Brandschutz &amp; Katastrophenschutz</div>
+        <div class="timeline-line">
+          <div class="tl-item">
+            <div class="tl-dot" style="background:var(--orange);box-shadow:0 0 8px var(--orange)"></div>
+            <div class="measure-year" style="color:var(--orange)">2026–2028 · Priorität II — Maßnahme 18</div>
+            <div class="measure-title">Neuaufstellung des Brandschauprogramms &amp; KRITIS-Notfallplanung</div>
+            <div class="measure-body">
+              Überarbeitung und Digitalisierung des Brandschauprogramms für alle
+              wiederkehrend prüfpflichtigen Sonderobjekte (§ 6 BHKG NRW: max. 5-Jahres-Zyklus
+              für A-Objekte). Aufbau eines digitalen Objektkatasters im GIS-System der
+              Feuerwehr Hagen. Parallel: Erstellung von externen Notfallplänen gem.
+              <strong>§§ 29–31 BHKG NRW</strong> für alle Seveso-III-Betriebe im Stadtgebiet
+              (ThyssenKrupp, ggf. weitere) in Abstimmung mit dem Ordnungsamt und der
+              Bezirksregierung Arnsberg (Katastrophenschutzbehörde NRW). Einbindung des
+              THW Ortsverband Hagen und der Hilfsorganisationen (DRK, Malteser) in
+              den Katastrophenschutzplan nach § 36 BHKG NRW.
+            </div>
+            <div class="measure-law">§ 6 BHKG NRW (Brandschau) · §§ 29–31 BHKG (Notfallpläne) · § 36 BHKG (KatS) · StörfallV</div>
+          </div>
+        </div>
+
+        <!-- Zusammenfassung aller 18 Maßnahmen als kompakte Übersichtstabelle -->
+        <div style="margin-top:1rem">
+          <div class="card-title" style="margin-bottom:.5rem"><span class="icon">📋</span> Gesamtübersicht – 18 Einzelmaßnahmen</div>
+          <table class="data-table" style="font-size:.72rem">
+            <thead>
+              <tr><th>#</th><th>Maßnahme</th><th>Sektor</th><th>Prio</th><th>Zeitraum</th></tr>
+            </thead>
+            <tbody>
+              <tr><td style="font-family:var(--font-mono);color:var(--amber)">M01</td><td>BF-Planstellen besetzen (8 Stellen)</td><td>Personal</td><td><span class="chip chip-red">I</span></td><td>2025–26</td></tr>
+              <tr><td style="font-family:var(--font-mono);color:var(--amber)">M02</td><td>Ausbildungsoffensive / Nachwuchs</td><td>Personal</td><td><span class="chip chip-amber">II</span></td><td>2026–28</td></tr>
+              <tr><td style="font-family:var(--font-mono);color:var(--amber)">M03</td><td>Demografiekonzept BF/FF</td><td>Personal</td><td><span class="chip chip-amber">II</span></td><td>2027–35</td></tr>
+              <tr><td style="font-family:var(--font-mono);color:var(--blue)">M04</td><td>Tagesalarmkonzept FF Hagen</td><td>Personal FF</td><td><span class="chip chip-red">I</span></td><td>2025</td></tr>
+              <tr><td style="font-family:var(--font-mono);color:var(--blue)">M05</td><td>Mitgliederwerbung „Hagen rettet"</td><td>Personal FF</td><td><span class="chip chip-amber">II</span></td><td>2025–30</td></tr>
+              <tr><td style="font-family:var(--font-mono);color:var(--orange)">M06</td><td>HLF 20 Ersatz FRW 1</td><td>Fahrzeuge</td><td><span class="chip chip-red">I</span></td><td>2025</td></tr>
+              <tr><td style="font-family:var(--font-mono);color:var(--orange)">M07</td><td>RTW Ersatz (2×)</td><td>Fahrzeuge</td><td><span class="chip chip-red">I</span></td><td>2026</td></tr>
+              <tr><td style="font-family:var(--font-mono);color:var(--orange)">M08</td><td>DLK 23-12 Ersatz FRW 1</td><td>Fahrzeuge</td><td><span class="chip chip-amber">II</span></td><td>2027</td></tr>
+              <tr><td style="font-family:var(--font-mono);color:var(--orange)">M09</td><td>GW-Gefahrgut Neubeschaffung</td><td>Fahrzeuge</td><td><span class="chip chip-amber">II</span></td><td>2028</td></tr>
+              <tr><td style="font-family:var(--font-mono);color:var(--orange)">M10</td><td>TLF 4000 FF (3× Rollout)</td><td>Fahrzeuge</td><td><span class="chip chip-blue">III</span></td><td>2029–31</td></tr>
+              <tr><td style="font-family:var(--font-mono);color:var(--green)">M11</td><td>Neubau FRW 1 – Feuerwache Mitte</td><td>Bau</td><td><span class="chip chip-red">I</span></td><td>2025–28</td></tr>
+              <tr><td style="font-family:var(--font-mono);color:var(--green)">M12</td><td>Sanierung FF-Häuser (5–7 Stk.)</td><td>Bau</td><td><span class="chip chip-amber">II</span></td><td>2029–32</td></tr>
+              <tr><td style="font-family:var(--font-mono);color:var(--green)">M13</td><td>Neuer FF-Standort Südost</td><td>Bau</td><td><span class="chip chip-blue">III</span></td><td>2030–35</td></tr>
+              <tr><td style="font-family:var(--font-mono);color:var(--purple)">M14</td><td>Leitstellen-Upgrade (§ 28 BHKG)</td><td>Digital</td><td><span class="chip chip-red">I</span></td><td>2025–26</td></tr>
+              <tr><td style="font-family:var(--font-mono);color:var(--purple)">M15</td><td>BSBP-Digitalplattform &amp; Dashboard</td><td>Digital</td><td><span class="chip chip-amber">II</span></td><td>2027–30</td></tr>
+              <tr><td style="font-family:var(--font-mono);color:var(--blue)">M16</td><td>Löschwasserdefizite Außenbereich</td><td>Löschwasser</td><td><span class="chip chip-red">I</span></td><td>2025–27</td></tr>
+              <tr><td style="font-family:var(--font-mono);color:var(--blue)">M17</td><td>Löschwasserrückhaltung Industrie</td><td>Löschwasser</td><td><span class="chip chip-amber">II</span></td><td>2028–30</td></tr>
+              <tr><td style="font-family:var(--font-mono);color:var(--orange)">M18</td><td>Brandschauprogramm &amp; KRITIS-Notfallplanung</td><td>Vorbeug. BS</td><td><span class="chip chip-amber">II</span></td><td>2026–28</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /t5 -->
+
+<!-- ╔══════════════════════════════════════════════════════════╗
+     ║  TAB 6 – RECHTSGRUNDLAGEN & QUELLENVERZEICHNIS          ║
+     ╚══════════════════════════════════════════════════════════╝ -->
+<div id="t6" class="tab-panel" role="tabpanel">
+  <div class="panel-body">
+
+    <div class="sec-head mb-md">
+      <span class="sec-num">[§]</span>
+      <span class="sec-label">Vollständiges Quellenverzeichnis</span>
+    </div>
+
+    <div class="sources-panel">
+      <div class="sources-head">📚 Quellenverzeichnis – BSBP-Simulator Feuerwehr Hagen v2.0</div>
+      <div class="sources-grid">
+
+        <div class="source-item">
+          <div class="src-num">[1] Basisdaten Stadt Hagen</div>
+          <div class="src-title">Statistikportal.de – Gemeindeverzeichnis 05914000</div>
+          <div class="src-detail">Einwohner: 190.384 (31.12.2024) · Fläche: 160,45 km² · Dichte: 1.187 EW/km²</div>
+          <div class="src-url">https://www.statistikportal.de/de/gemeindeverzeichnis/05914000</div>
+        </div>
+
+        <div class="source-item">
+          <div class="src-num">[2] Zentralgesetz Brandschutz NRW</div>
+          <div class="src-title">BHKG NRW – Gesetz über den Brandschutz, die Hilfeleistung und den Katastrophenschutz</div>
+          <div class="src-detail">Vom 17. Dezember 2015, in Kraft seit 1.1.2016. GV. NRW. 2015 S. 886. Zuletzt geändert durch Artikel 6 des Gesetzes vom 23. Juni 2021 (GV. NRW. S. 762).</div>
+          <div class="src-url">https://recht.nrw.de/lrgv/gesetz/01072021-gesetz-ueber-den-brandschutz-die-hilfeleistung-und-den-katastrophenschutz-bhkg/</div>
+        </div>
+
+        <div class="source-item">
+          <div class="src-num">[3] Vorläufergesetz (historisch relevant)</div>
+          <div class="src-title">FSHG NRW – Gesetz über den Feuerschutz und die Hilfeleistung</div>
+          <div class="src-detail">Vom 10. Februar 1998 (GV. NW. S. 122). Abgelöst durch BHKG NRW zum 1.1.2016. Grundlage für Bestandspläne bis 2016, §§ 1, 10, 22 maßgeblich.</div>
+          <div class="src-url">https://recht.nrw.de/lmi/owa/br_bes_text?sg=2&menu=1&bes_id=4725&aufgehoben=J&anw_nr=2</div>
+        </div>
+
+        <div class="source-item">
+          <div class="src-num">[4] Feuerwehr Hagen – Struktur</div>
+          <div class="src-title">Wikipedia: Feuerwehr Hagen</div>
+          <div class="src-detail">2 BF-Wachen (FRW 1 Mitte, FRW 2 Ost), 15 FF-Einheiten, Jugendfeuerwehr 4 Gruppen, BF-Gründung 1.8.1913, Leiter: Ltd. BD Veit Lenke.</div>
+          <div class="src-url">https://de.wikipedia.org/wiki/Feuerwehr_Hagen</div>
+        </div>
+
+        <div class="source-item">
+          <div class="src-num">[5] IDF NRW Handreichung 2016</div>
+          <div class="src-title">Handreichung zur Brandschutzbedarfsplanung für kommunale Entscheidungsträger</div>
+          <div class="src-detail">Herausgeber: IM NRW / Arbeitsgemeinschaft kommunaler Spitzenverbände NRW. Stand: 7. Juli 2016. Grundlegende Planungshilfe nach § 3 Abs. 3 BHKG NRW.</div>
+          <div class="src-url">https://www.idf.nrw.de/service/downloads/pdf/2018/2016-07-07-brandschutzbedarfsplanung_-_handreichung_fuer_kommunale_entscheidungstraeger.pdf</div>
+        </div>
+
+        <div class="source-item">
+          <div class="src-num">[6] LFV NRW – Empfehlungen 2001</div>
+          <div class="src-title">Hinweise und Empfehlungen für die Anfertigung von Brandschutzbedarfsplänen (Gemeinden NRW)</div>
+          <div class="src-detail">Herausgeber: Landesfeuerwehrverband NRW. Stand: Januar 2001. IDF NRW-Veröffentlichung. Grundlage für die Schutzzieldefinition in NRW-Kommunen.</div>
+          <div class="src-url">https://www.idf.nrw.de/service/downloads/pdf/bsbp2001.pdf</div>
+        </div>
+
+        <div class="source-item">
+          <div class="src-num">[7] DVGW-Arbeitsblatt W 405</div>
+          <div class="src-title">DVGW W 405 – Bereitstellung von Löschwasser durch die öffentliche Trinkwasserversorgung</div>
+          <div class="src-detail">Technische Norm für Löschwasserversorgung aus dem Netz. Ergänzt durch AGBF NRW-Richtlinie Löschwasserversorgung. Pflicht nach § 3 Abs. 1 S. 2 BHKG NRW.</div>
+          <div class="src-url">https://www.dvgw.de/regelwerk/regelwerksuche/dvgw-arbeitsblatt-w-405-2008-02/</div>
+        </div>
+
+        <div class="source-item">
+          <div class="src-num">[8] AGBF-Schutzzieldefinition</div>
+          <div class="src-title">Qualitätskriterien für die Bedarfsplanung von Feuerwehren in Städten (AGBF-Bund)</div>
+          <div class="src-detail">Arbeitsgemeinschaft der Leiter der Berufsfeuerwehren (AGBF-Bund). Erstfassung 1998, bestätigt auf AGBF-Vollversammlung 19.11.2015. Schutzziel: 8 Min / 1:8+GF / 90 %.</div>
+          <div class="src-url">https://www.agbf.de/</div>
+        </div>
+
+        <div class="source-item">
+          <div class="src-num">[9] OVG NRW – Leiturteil BSBP</div>
+          <div class="src-title">OVG NRW, Urteil vom 28.08.2001, Az. 10 A 3051/99 (Schutzziel-Umsetzungspflicht)</div>
+          <div class="src-detail">Das OVG NRW hat die verbindliche Umsetzungspflicht des Brandschutzbedarfsplans bestätigt. Bestätigt durch OVG NRW-Beschluss 24.04.2012, Az. 10 B 382/12 (SgE Feu § 17 Abs. 1 BauO NRW Nr. 5).</div>
+          <div class="src-url">https://www.feuerwehrverband.nrw/fileadmin/Downloads/Verband/Themen/Verband/Brandschutzbedarfsplanung_01.pdf</div>
+        </div>
+
+        <div class="source-item">
+          <div class="src-num">[10] GO NRW</div>
+          <div class="src-title">Gemeindeordnung für das Land Nordrhein-Westfalen (GO NRW)</div>
+          <div class="src-detail">§ 41 GO NRW: Ratszuständigkeit für wesentliche Entscheidungen inkl. BSBP. § 55 GO NRW: Kontrolle städtischer Einrichtungen. §§ 78, 84 GO NRW: Haushalt und Finanzplanung.</div>
+          <div class="src-url">https://recht.nrw.de/lmi/owa/br_bes_text?sg=0&menu=0&anw_nr=2&bes_id=10007</div>
+        </div>
+
+        <div class="source-item">
+          <div class="src-num">[11] BauO NRW 2018</div>
+          <div class="src-title">Bauordnung für das Land Nordrhein-Westfalen (BauO NRW 2018)</div>
+          <div class="src-detail">§§ 14–18: Allgemeine Anforderungen Brandschutz. §§ 49–54: Sonderbauten (Hochhäuser, Krankenhäuser). In Kraft getreten: 1.1.2019 (GV. NRW. 2018 S. 421).</div>
+          <div class="src-url">https://recht.nrw.de/lmi/owa/br_bes_text?sg=0&menu=0&bes_id=40415</div>
+        </div>
+
+        <div class="source-item">
+          <div class="src-num">[12] AGBF Hagen – Mitgliedschaft</div>
+          <div class="src-title">AGBF Bund – Berufsfeuerwehr Hagen (Mitgliedseintrag)</div>
+          <div class="src-detail">Leiter Feuerwehr Hagen: Branddirektor Dipl.-Ing. Veit Lenke. Amt für Brand- und Katastrophenschutz, Florianstraße 2, 58119 Hagen.</div>
+          <div class="src-url">https://www.agbf.de/berufsfeuerwehren/nordrhein-westfalen/62-berufsfeuerwehr-hagen</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Normenkette -->
+    <div class="sec-head mb-md" style="margin-top:1.5rem">
+      <span class="sec-num">[§§]</span>
+      <span class="sec-label">Normenkette – Relevante Vorschriften im Überblick</span>
+    </div>
+
+    <div class="grid-3 mb-md">
+      <div class="card" style="--card-accent:var(--amber)">
+        <div class="card-title"><span class="icon">📖</span> Primärrecht (NRW-Landesrecht)</div>
+        <table class="data-table">
+          <thead><tr><th>Norm</th><th>Inhalt</th></tr></thead>
+          <tbody>
+            <tr><td style="font-family:var(--font-mono)">§ 1 BHKG NRW</td><td>Ziel und Anwendungsbereich</td></tr>
+            <tr><td style="font-family:var(--font-mono)">§ 3 Abs. 1 BHKG</td><td>Pflicht zur leistungsfähigen Feuerwehr</td></tr>
+            <tr><td style="font-family:var(--font-mono)">§ 3 Abs. 3 BHKG</td><td>Pflicht zur BSBP-Aufstellung/Fortschreibung</td></tr>
+            <tr><td style="font-family:var(--font-mono)">§ 4 BHKG NRW</td><td>Berufsfeuerwehr kreisfreie Städte</td></tr>
+            <tr><td style="font-family:var(--font-mono)">§ 8–9 BHKG NRW</td><td>Rechte Feuerwehrangehöriger</td></tr>
+            <tr><td style="font-family:var(--font-mono)">§ 28 BHKG NRW</td><td>Einheitliche Leitstelle</td></tr>
+            <tr><td style="font-family:var(--font-mono)">§§ 29–31 BHKG</td><td>Externe Notfallpläne (Sonderanlagen)</td></tr>
+            <tr><td style="font-family:var(--font-mono)">§ 41 GO NRW</td><td>Ratszuständigkeit (BSBP-Beschluss)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card" style="--card-accent:var(--blue)">
+        <div class="card-title"><span class="icon">📖</span> Technische Normen / Richtlinien</div>
+        <table class="data-table">
+          <thead><tr><th>Norm</th><th>Thema</th></tr></thead>
+          <tbody>
+            <tr><td style="font-family:var(--font-mono)">DIN 14011</td><td>Begriffe aus dem Feuerwehrwesen</td></tr>
+            <tr><td style="font-family:var(--font-mono)">DIN 14092</td><td>Feuerwehrhäuser</td></tr>
+            <tr><td style="font-family:var(--font-mono)">DIN 14530</td><td>Löschfahrzeuge</td></tr>
+            <tr><td style="font-family:var(--font-mono)">DIN 14701</td><td>Drehleitern (DLK)</td></tr>
+            <tr><td style="font-family:var(--font-mono)">DVGW W 405</td><td>Löschwasserversorgung</td></tr>
+            <tr><td style="font-family:var(--font-mono)">FwDV 3</td><td>Einheiten im Lösch- u. Hilfeleistungseinsatz</td></tr>
+            <tr><td style="font-family:var(--font-mono)">AGBF-Schutzziel</td><td>8 Min / 1:8+GF / 90 % (anerk. Regel)</td></tr>
+            <tr><td style="font-family:var(--font-mono)">VDE 0834</td><td>Sicherheitsbeleuchtung / Leitstelle</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card" style="--card-accent:var(--green)">
+        <div class="card-title"><span class="icon">📖</span> Rechtsprechung & Bundesrecht</div>
+        <table class="data-table">
+          <thead><tr><th>Grundlage</th><th>Relevanz für BSBP</th></tr></thead>
+          <tbody>
+            <tr><td style="font-family:var(--font-mono)">Art. 30 GG</td><td>Länderkompetenz Gefahrenabwehr</td></tr>
+            <tr><td style="font-family:var(--font-mono)">§§ 823, 839 BGB</td><td>Haftung bei Pflichtverletzung</td></tr>
+            <tr><td style="font-family:var(--font-mono)">§ 34 StGB</td><td>Rechtfertigender Notstand</td></tr>
+            <tr><td style="font-family:var(--font-mono)">BImSchG</td><td>Industrierisiken / Seveso</td></tr>
+            <tr><td style="font-family:var(--font-mono)">StörfallV § 9a</td><td>Externe Notfallpläne</td></tr>
+            <tr><td style="font-family:var(--font-mono)">OVG NRW 10 A 3051/99</td><td>Umsetzungspflicht BSBP</td></tr>
+            <tr><td style="font-family:var(--font-mono)">OVG NRW 10 B 382/12</td><td>Bestätigung Umsetzungspflicht</td></tr>
+            <tr><td style="font-family:var(--font-mono)">RettG NRW</td><td>Rettungsdienst kreisfr. Städte</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /t6 -->
+
+<footer class="app-footer">
+  BSBP-SIMULATOR v2.0 · FEUERWEHR HAGEN · ALLE SIMULATIONSDATEN FIKTIV · NUR FÜR DEMONSTRATIONS- UND SCHULUNGSZWECKE<br>
+  RECHTSGRUNDLAGEN: BHKG NRW (2015) · AGBF-SCHUTZZIELEMPFEHLUNG · LFV NRW 2001 · IDF NRW 2016 · GO NRW<br>
+  KEINE RECHTSVERBINDLICHKEIT · KEINE HAFTUNG FÜR PLANUNGSENTSCHEIDUNGEN AUF BASIS DIESER SIMULATION
+</footer>
+
+<!-- ============================================================
+     JAVASCRIPT – Modularer Aufbau
+     ============================================================ -->
+<script>
+(function () {
+  "use strict";
+
+  /* ─── Konfiguration ─────────────────────────────────────── */
+  const CFG = {
+    REF: { hf: 8, ps: 10, er: 90 },
+    THR: { ok: 90, warn: 70 },
+    BEZIRKE: [
+      { name: "Hagen-Mitte",       ist: 96 },
+      { name: "Haspe",             ist: 91 },
+      { name: "Vorhalle",          ist: 84 },
+      { name: "Altenhagen",        ist: 88 },
+      { name: "Boele-Kabel",       ist: 79 },
+      { name: "Eilpe/Delstern",    ist: 75 },
+      { name: "Emst",              ist: 68 },
+      { name: "Hohenlimburg",      ist: 58 },
+    ],
+    OBJ_TYPES: [
+      { key:"hochhaus",    label:"Hochhäuser",           cat:"A", col:"var(--red)",    n:4 },
+      { key:"krankenhaus", label:"Krankenhäuser",        cat:"A", col:"var(--red)",    n:8 },
+      { key:"industrie",   label:"Industrie/KRITIS",     cat:"A", col:"var(--red)",    n:5 },
+      { key:"schule",      label:"Schulen/Bildung",      cat:"B", col:"var(--amber)",  n:22 },
+      { key:"mfh",         label:"Mehrfamilienhäuser",   cat:"B", col:"var(--amber)",  n:25 },
+      { key:"tunnel",      label:"Tunnel/Verkehr",       cat:"B", col:"var(--orange)", n:3 },
+      { key:"efh",         label:"Einfamilienhäuser",    cat:"C", col:"var(--blue)",   n:312 },
+    ],
+    DEF: { warn: 5, crit: 15 },
+  };
+
+  /* ─── Zentraler State ──────────────────────────────────── */
+  const S = {
+    hf: 8, ps: 10, er: 90,
+    active: new Set(CFG.OBJ_TYPES.map(o => o.key)),
+  };
+
+  /* ─── Tab-System: wird jetzt durch globale showTab()-Funktion gehandhabt ─── */
+
+  /* ─── UI-Modul ───────────────────────────────────────────
+     Alle DOM-Schreibzugriffe gebündelt.                     */
+  const UI = {
+
+    /**
+     * Pillar-Wertanzeige aktualisieren (mit Bounce-Animation).
+     */
+    setPillar(field, val) {
+      const el = document.getElementById(`v-${field}`);
+      if (!el) return;
+      el.textContent = val;
+      el.classList.remove("pop");
+      void el.offsetWidth;
+      el.classList.add("pop");
+
+      // Farbe nach Status
+      let col;
+      if (field === "hf") col = val <= CFG.REF.hf ? "var(--green)" : val <= CFG.REF.hf+2 ? "var(--amber)" : "var(--red)";
+      else if (field === "ps") col = val >= CFG.REF.ps ? "var(--green)" : val >= CFG.REF.ps-2 ? "var(--amber)" : "var(--red)";
+      else col = val >= CFG.THR.ok ? "var(--green)" : val >= CFG.THR.warn ? "var(--amber)" : "var(--red)";
+      el.style.color = col;
+    },
+
+    /**
+     * Slider + Zahleneingabe synchronisieren und Füllprozent aktualisieren.
+     */
+    syncSlider(field, val) {
+      const sl = document.getElementById(`sl-${field}`);
+      const ni = document.getElementById(`ni-${field}`);
+      const sv = document.getElementById(`sv-${field}`);
+      if (sl) {
+        sl.value = val;
+        const pct = ((val - sl.min) / (sl.max - sl.min)) * 100;
+        sl.style.setProperty("--pct", `${pct}%`);
+      }
+      if (ni) ni.value = val;
+      if (sv) sv.textContent = field === "hf" ? `${val} Min` : field === "ps" ? `${val} Kräfte` : `${val} %`;
+    },
+
+    /**
+     * Delta-Anzeige und Mini-Fortschrittsbalken setzen.
+     */
+    setDelta(field, val) {
+      const ref = CFG.REF[field];
+      const delta = val - ref;
+      const invert = field === "hf";
+      const isGood = invert ? delta <= 0 : delta >= 0;
+      const unit = field === "hf" ? " Min" : field === "er" ? " %" : "";
+
+      const dEl  = document.getElementById(`d-${field}`);
+      const pbEl = document.getElementById(`pb-${field}`);
+      if (dEl) {
+        dEl.textContent = (delta >= 0 ? "+" : "") + delta + unit;
+        dEl.style.color = isGood
+          ? (delta === 0 ? "var(--text-3)" : "var(--green)")
+          : (Math.abs(delta) > 2 ? "var(--red)" : "var(--amber)");
+      }
+      if (pbEl) {
+        const sl = document.getElementById(`sl-${field}`);
+        if (sl) {
+          const pct = ((val - sl.min) / (sl.max - sl.min)) * 100;
+          pbEl.style.width = `${pct}%`;
+          pbEl.style.background = isGood ? "var(--green)" : (Math.abs(delta) > 2 ? "var(--red)" : "var(--amber)");
+        }
+      }
+    },
+
+    /**
+     * Gesamtscore aus 3 Parametern berechnen.
+     * Gewichtung: 40% HF · 30% PS · 30% ER
+     */
+    calcScore() {
+      const hfScore = Math.max(0, Math.min(100, 100 - (S.hf - CFG.REF.hf) * 12.5));
+      const psScore = Math.max(0, Math.min(100, 100 - (CFG.REF.ps - S.ps) * 10));
+      const erScore = S.er;
+      const total   = Math.round(hfScore * .4 + psScore * .3 + erScore * .3);
+      return { total, hfScore, psScore, erScore };
+    },
+
+    /**
+     * SVG-Gauge aktualisieren (270°-Bogen, r=72 → Umfang≈452).
+     * Track-Länge 75 % = 339.
+     */
+    setGauge(score) {
+      const circ  = document.getElementById("g-fill");
+      const pctEl = document.getElementById("gauge-pct");
+      if (!circ || !pctEl) return;
+
+      const TRACK = 339;
+      const filled = Math.round((score / 100) * TRACK);
+      circ.style.strokeDashoffset = TRACK - filled;
+
+      let col = "var(--green)";
+      if (score < CFG.THR.warn) col = "var(--red)";
+      else if (score < CFG.THR.ok) col = "var(--amber)";
+
+      circ.style.stroke = col;
+      pctEl.textContent = `${score}%`;
+      pctEl.style.color  = col;
+    },
+
+    /**
+     * Ampel (3 Segmente).
+     */
+    setTrafficLight(score) {
+      ["tl-r","tl-y","tl-g"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.className = "tl-seg";
+      });
+      const el = document.getElementById(
+        score >= CFG.THR.ok ? "tl-g" : score >= CFG.THR.warn ? "tl-y" : "tl-r"
+      );
+      const cls = score >= CFG.THR.ok ? "on-green" : score >= CFG.THR.warn ? "on-amber" : "on-red";
+      el?.classList.add(cls);
+    },
+
+    /**
+     * Status-Pill Text + Klasse.
+     */
+    setPill(score) {
+      const el = document.getElementById("status-pill");
+      if (!el) return;
+      el.className = "status-pill";
+      if (score >= CFG.THR.ok) {
+        el.classList.add("pill-ok"); el.textContent = "✓ Schutzziel erfüllt";
+      } else if (score >= CFG.THR.warn) {
+        el.classList.add("pill-warn"); el.textContent = "⚠ Eingeschränkt";
+      } else {
+        el.classList.add("pill-critical"); el.textContent = "✕ Kritisches Defizit";
+      }
+    },
+
+    /**
+     * Teilscores in der Info-Box anzeigen.
+     */
+    setScoreInfo(hfScore, psScore, erScore) {
+      const fmt = v => `${Math.round(v)} Pkt`;
+      ["hf","ps","er"].forEach((f, i) => {
+        const el = document.getElementById(`si-${f}`);
+        if (el) el.textContent = fmt([hfScore, psScore, erScore][i]);
+      });
+    },
+
+    /**
+     * Bewertungsmatrix befüllen.
+     */
+    setBMRows() {
+      const refMap = {
+        hf: { cur: S.hf, ref: CFG.REF.hf, unit:" Min", goodWhen:"le" },
+        ps: { cur: S.ps, ref: CFG.REF.ps, unit:" Kräfte", goodWhen:"ge" },
+        er: { cur: S.er, ref: CFG.REF.er, unit:" %", goodWhen:"ge" },
+      };
+
+      Object.entries(refMap).forEach(([f, d]) => {
+        const valEl  = document.getElementById(`bm-${f}`);
+        const chipEl = document.getElementById(`bm-${f}-c`);
+        if (!valEl || !chipEl) return;
+        valEl.textContent = d.cur + d.unit;
+        const ok = d.goodWhen === "le" ? d.cur <= d.ref : d.cur >= d.ref;
+        const diff = d.cur - d.ref;
+        let cls, txt;
+        if (ok) { cls="chip-green"; txt="✓ Erfüllt"; }
+        else if (Math.abs(diff) <= 2) { cls="chip-amber"; txt="⚠ Grenzbereich"; }
+        else { cls="chip-red"; txt="✕ Defizit"; }
+        chipEl.innerHTML = `<span class="chip ${cls}">${txt}</span>`;
+      });
+    },
+
+    /**
+     * Risikoobjekt-Zähler aktualisieren (Tabs 2).
+     */
+    setRiskCounts() {
+      const counts = { A:0, B:0, C:0 };
+      CFG.OBJ_TYPES.forEach(o => {
+        if (S.active.has(o.key)) counts[o.cat] += o.n;
+      });
+      ["A","B","C"].forEach(c => {
+        const el = document.getElementById(`r2-${c.toLowerCase()}`);
+        if (el) el.textContent = counts[c];
+      });
+    },
+
+    /**
+     * Defizit-Tabelle (Tab 4).
+     */
+    setDefTable() {
+      const tbody = document.getElementById("def-tbody");
+      if (!tbody) return;
+
+      const hfF = Math.max(.6, 1 - (S.hf - CFG.REF.hf) * .04);
+      const psF = Math.max(.7, S.ps / CFG.REF.ps);
+
+      const rows = CFG.BEZIRKE.map(b => ({
+        ...b,
+        ist:  Math.round(Math.min(100, b.ist * hfF * psF)),
+        soll: S.er,
+      })).sort((a,b) => (b.soll - b.ist) - (a.soll - a.ist));
+
+      tbody.innerHTML = rows.map(r => {
+        const delta = r.soll - r.ist;
+        const barW  = r.ist;
+        const barCol = r.ist >= CFG.THR.ok ? "var(--green)" : r.ist >= CFG.THR.warn ? "var(--amber)" : "var(--red)";
+        let cc, ct;
+        if (delta > CFG.DEF.crit)      { cc="chip-red";   ct="Kritisch"; }
+        else if (delta > CFG.DEF.warn) { cc="chip-amber"; ct="Warnung"; }
+        else                            { cc="chip-green"; ct="OK"; }
+        return `
+          <tr>
+            <td style="font-weight:500;color:var(--text-1)">${r.name}</td>
+            <td>
+              <div style="font-family:var(--font-mono);font-size:.75rem;color:${barCol}">${r.ist}%</div>
+              <div class="prog-track" style="width:80px;margin-top:2px">
+                <div class="prog-fill" style="width:${barW}%;background:${barCol}"></div>
+              </div>
+            </td>
+            <td style="font-family:var(--font-mono)">${r.soll}%</td>
+            <td style="font-family:var(--font-mono);color:${delta>0?"var(--red)":"var(--green)"}">
+              ${delta>0?"−":"+"}${Math.abs(delta)} PP
+            </td>
+            <td><span class="chip ${cc}">${ct}</span></td>
+          </tr>`;
+      }).join("");
+    },
+
+    /**
+     * Uhr im Header.
+     */
+    clock() {
+      const el = document.getElementById("live-clock");
+      if (!el) return;
+      const n = new Date();
+      const p = v => String(v).padStart(2, "0");
+      el.textContent = `${p(n.getHours())}:${p(n.getMinutes())}:${p(n.getSeconds())}`;
+    },
+  };
+
+  /* ─── Charts-Modul ───────────────────────────────────────
+     Chart.js-Instanz für Soll/Ist-Diagramm (Tab 4).        */
+  const Charts = {
+    siChart:  null,
+    siReady:  false,
+
+    /**
+     * Berechnet Ist-Werte auf Basis aktueller Schutzzielparameter.
+     */
+    compute() {
+      const hfF = Math.max(.6, 1 - (S.hf - CFG.REF.hf) * .04);
+      const psF = Math.max(.7, S.ps / CFG.REF.ps);
+      const ist  = CFG.BEZIRKE.map(b => Math.round(Math.min(100, b.ist * hfF * psF)));
+      const soll = CFG.BEZIRKE.map(() => S.er);
+      return { labels: CFG.BEZIRKE.map(b => b.name), ist, soll };
+    },
+
+    /**
+     * Diagramm initialisieren (lazy – erst wenn Tab 4 aktiv).
+     */
+    initSI() {
+      const canvas = document.getElementById("chart-si");
+      if (!canvas || !window.Chart) return;
+      this.siReady = true;
+
+      const { labels, ist, soll } = this.compute();
+
+      this.siChart = new Chart(canvas.getContext("2d"), {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Ist-Wert (%)",
+              data:  ist,
+              backgroundColor: ist.map(v =>
+                v >= CFG.THR.ok   ? "rgba(34,197,94,.6)"  :
+                v >= CFG.THR.warn ? "rgba(245,158,11,.6)" :
+                                    "rgba(239,68,68,.6)"
+              ),
+              borderColor: ist.map(v =>
+                v >= CFG.THR.ok   ? "rgba(34,197,94,1)"  :
+                v >= CFG.THR.warn ? "rgba(245,158,11,1)" :
+                                    "rgba(239,68,68,1)"
+              ),
+              borderWidth: 1,
+              borderRadius: 4,
+            },
+            {
+              label: "Soll-Wert (%)",
+              type:  "line",
+              data:  soll,
+              borderColor:     "rgba(245,158,11,.8)",
+              backgroundColor: "transparent",
+              borderWidth: 2,
+              borderDash: [6,3],
+              pointRadius: 4,
+              pointBackgroundColor: "var(--amber)",
+              tension: 0,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 500, easing: "easeInOutQuart" },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: "#131825",
+              borderColor: "#1c2438",
+              borderWidth: 1,
+              titleColor: "#e2e8f0",
+              bodyColor:  "#8b98b1",
+              callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y}%` },
+            },
+          },
+          scales: {
+            x: {
+              grid:  { color: "rgba(28,36,56,.8)" },
+              ticks: { color: "#4b5571", font: { family: "Courier New", size: 10 } },
+            },
+            y: {
+              min: 40, max: 105,
+              grid:  { color: "rgba(28,36,56,.8)" },
+              ticks: {
+                color: "#4b5571",
+                font:  { family: "Courier New", size: 10 },
+                callback: v => `${v}%`,
+              },
+            },
+          },
+        },
+      });
+    },
+
+    /**
+     * Diagramm-Daten aktualisieren.
+     */
+    updateSI() {
+      if (!this.siChart) return;
+      const { ist, soll } = this.compute();
+      this.siChart.data.datasets[0].data = ist;
+      this.siChart.data.datasets[0].backgroundColor = ist.map(v =>
+        v >= CFG.THR.ok ? "rgba(34,197,94,.6)" : v >= CFG.THR.warn ? "rgba(245,158,11,.6)" : "rgba(239,68,68,.6)");
+      this.siChart.data.datasets[0].borderColor = ist.map(v =>
+        v >= CFG.THR.ok ? "rgba(34,197,94,1)"  : v >= CFG.THR.warn ? "rgba(245,158,11,1)"  : "rgba(239,68,68,1)");
+      this.siChart.data.datasets[1].data = soll;
+      this.siChart.update("active");
+    },
+  };
+
+  /* ─── App – Öffentliche API ──────────────────────────────
+     Exponiert als window.App für onclick-Handler.          */
+  window._bsbpCharts = Charts; // für showTab() erreichbar
+
+  window.App = {
+
+    /**
+     * Wird bei jeder Slider-/Input-Änderung aufgerufen.
+     * @param {string} field  'hf' | 'ps' | 'er'
+     * @param {*}      raw    Rohwert vom Event
+     */
+    update(field, raw) {
+      const sl  = document.getElementById(`sl-${field}`);
+      const min = sl ? +sl.min : 0;
+      const max = sl ? +sl.max : 100;
+      const val = Math.max(min, Math.min(max, Math.round(+raw)));
+
+      S[field] = val;
+
+      UI.syncSlider(field, val);
+      UI.setPillar(field, val);
+      UI.setDelta(field, val);
+
+      const { total, hfScore, psScore, erScore } = UI.calcScore();
+      UI.setGauge(total);
+      UI.setTrafficLight(total);
+      UI.setPill(total);
+      UI.setScoreInfo(hfScore, psScore, erScore);
+      UI.setBMRows();
+      UI.setDefTable();
+      Charts.updateSI();
+    },
+
+    /**
+     * Alle Werte auf AGBF-Standardwerte zurücksetzen.
+     */
+    reset() {
+      Object.entries(CFG.REF).forEach(([f, v]) => App.update(f, v));
+    },
+  };
+
+  /* ─── Objekt-Toggles (Tab 2) ─────────────────────────── */
+  function initToggles() {
+    const c = document.getElementById("obj-toggles");
+    if (!c) return;
+    c.innerHTML = CFG.OBJ_TYPES.map(o => `
+      <div class="obj-toggle on" data-key="${o.key}"
+           style="--ot-color:${o.col}"
+           role="checkbox" aria-checked="true" tabindex="0">
+        <div class="ot-dot"></div>
+        <span>${o.label} (${o.cat}) – ${o.n}</span>
+      </div>
+    `).join("");
+
+    // Event-Delegation für Toggles (funktioniert auch nach innerHTML)
+    c.addEventListener('click', function(e) {
+      var toggle = e.target.closest('[data-key]');
+      if (toggle) _toggleObj(toggle.dataset.key);
+    });
+    c.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        var toggle = e.target.closest('[data-key]');
+        if (toggle) _toggleObj(toggle.dataset.key);
+      }
+    });
+  }
+
+  function _toggleObj(key) {
+    S.active.has(key) ? S.active.delete(key) : S.active.add(key);
+    const btn = document.querySelector(`[data-key="${key}"]`);
+    if (btn) {
+      btn.classList.toggle("on", S.active.has(key));
+      btn.setAttribute("aria-checked", String(S.active.has(key)));
+    }
+    UI.setRiskCounts();
+  }
+
+  /* ─── Bootstrap ──────────────────────────────────────── */
+  document.addEventListener("DOMContentLoaded", () => {
+    if (window.Chart) {
+      Chart.defaults.color       = "#8b98b1";
+      Chart.defaults.borderColor = "#1c2438";
+      Chart.defaults.font.family = "'Courier New', monospace";
+    }
+
+    // ── 1. TAB-SWITCHING ────────────────────────────────────────────────
+    // Kein onclick-Attribut mehr — reiner addEventListener-Ansatz.
+    document.querySelectorAll('.tab-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var id = btn.getAttribute('data-tab');
+        if (!id) return;
+        // Alle Panels + Buttons zurücksetzen
+        document.querySelectorAll('.tab-panel').forEach(function(p) {
+          p.classList.remove('active');
+        });
+        document.querySelectorAll('.tab-btn').forEach(function(b) {
+          b.classList.remove('active');
+          b.setAttribute('aria-selected', 'false');
+        });
+        // Aktives Panel + Button setzen
+        var panel = document.getElementById(id);
+        if (panel) panel.classList.add('active');
+        btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
+        // Chart lazy-init für Tab 4
+        if (id === 't4' && !Charts.siReady) Charts.initSI();
+        // Tabellen-Wrapper nach Tab-Wechsel nochmals prüfen
+        // (für dynamisch generierte Inhalte wie die Defizittabelle)
+        wrapTables();
+      });
+    });
+
+    // ── 2. SLIDER + NUMBER-INPUTS ───────────────────────────────────────
+    // Alle Inputs mit data-field werden automatisch verdrahtet.
+    document.querySelectorAll('[data-field]').forEach(function(el) {
+      var field = el.getAttribute('data-field');
+      var evtName = el.type === 'range' ? 'input' : 'input';
+      el.addEventListener(evtName, function() {
+        App.update(field, el.value);
+      });
+    });
+
+    // ── 3. RESET-BUTTON ──────────────────────────────────────────────────
+    var resetBtn = document.querySelector('[data-action="reset"]');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', function() { App.reset(); });
+    }
+
+    // ── 4. TABELLEN-WRAPPER (Funktion, mehrfach aufrufbar) ───────────────
+    function wrapTables() {
+      document.querySelectorAll('.data-table').forEach(function(tbl) {
+        if (tbl.parentElement && !tbl.parentElement.classList.contains('tbl-scroll')) {
+          var cols = tbl.querySelectorAll('th').length;
+          var wrap = document.createElement('div');
+          wrap.className = 'tbl-scroll' + (cols <= 3 ? ' tbl-narrow' : '');
+          tbl.parentNode.insertBefore(wrap, tbl);
+          wrap.appendChild(tbl);
+        }
+      });
+    }
+    wrapTables();
+
+    // ── 5. APP-INIT ──────────────────────────────────────────────────────
+    App.reset();
+
+    // Uhr starten
+    UI.clock();
+    setInterval(function() { UI.clock(); }, 1000);
+  });
+
+})(); // IIFE
+</script>
+</body>
+</html>
